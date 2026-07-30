@@ -484,28 +484,47 @@ class GLBViewer {
   getLastStats() { return this._lastStats; }
 
   // 高亮某个 mesh（在视口内闪一下青色自发光），用于「点面板部位 → 提示正在配置的是哪个 mesh」
-  // 自动还原：保存原始 emissive / emissiveIntensity，约 0.9s 后恢复，避免污染模型外观
+  // 关键：GLB 里很多 mesh 共用同一个 Material 实例，若直接改共享材质的 emissive，
+  // 会用该材质的所有 mesh 一起发光（看起来「所有物品都高亮」）。
+  // 因此这里给「被选中的那个 mesh」单独克隆材质再上发光色，只染它一个，0.9s 后还原并释放克隆。
   highlightMesh(name) {
     if (!this.currentModel || !name) return;
+    // 先还原上一次高亮，避免快速连点导致多个部位一直亮着
+    this._restoreHighlight();
     const objs = [];
     this.currentModel.traverse(o => { if (o.isMesh && o.name === name) objs.push(o); });
     if (objs.length === 0) return;
     const HL = new THREE.Color(0x39d0ff);
     const saved = [];
     objs.forEach(o => {
-      const mats = Array.isArray(o.material) ? o.material : [o.material];
-      mats.forEach(m => {
-        if (!m || !m.emissive) return;   // MeshBasicMaterial 等无 emissive 的跳过
-        saved.push({ m, e: m.emissive.clone(), i: m.emissiveIntensity });
-        m.emissive.copy(HL);
-        m.emissiveIntensity = 0.9;
+      const originals = Array.isArray(o.material) ? o.material.slice() : [o.material];
+      // 仅当该 mesh 至少有一个材质支持 emissive 时才克隆（无 emissive 的材质高亮无意义）
+      const canHL = originals.some(m => m && m.emissive);
+      if (!canHL) return;
+      const clones = originals.map(m => {
+        if (!m) return m;
+        const c = m.clone();
+        if (c.emissive) { c.emissive.copy(HL); c.emissiveIntensity = 0.9; }
+        return c;
       });
+      o.material = clones.length === 1 ? clones[0] : clones;
+      saved.push({ obj: o, originals });
     });
     if (saved.length === 0) return;
-    clearTimeout(this._hlTimer);
-    this._hlTimer = setTimeout(() => {
-      saved.forEach(s => { s.m.emissive.copy(s.e); s.m.emissiveIntensity = s.i; });
-    }, 900);
+    this._hlSaved = saved;
+    this._hlTimer = setTimeout(() => { this._restoreHighlight(); }, 900);
+  }
+
+  // 还原高亮：把克隆材质换回原材质，并 dispose 克隆以释放显存（不碰共享纹理）
+  _restoreHighlight() {
+    if (this._hlTimer) { clearTimeout(this._hlTimer); this._hlTimer = null; }
+    if (!this._hlSaved) return;
+    this._hlSaved.forEach(s => {
+      const cur = Array.isArray(s.obj.material) ? s.obj.material : [s.obj.material];
+      cur.forEach(m => { if (m && m.dispose) m.dispose(); });
+      s.obj.material = s.originals.length === 1 ? s.originals[0] : s.originals;
+    });
+    this._hlSaved = null;
   }
 
   // ============ 动画控制 ============
