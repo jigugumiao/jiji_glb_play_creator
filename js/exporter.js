@@ -4,6 +4,20 @@
 
 // escapeHtml, downloadText 由 utils.js 提供为全局函数
 
+// 导出时把「当前界面语言」烘焙进成品：生成一个极简 i18n 运行时，
+// 让导出的独立 HTML 内联调用 t('中文') 也能显示对应语言（无需联网、无外部依赖）。
+function buildExporterI18n() {
+  var dict = (window.I18N && window.I18N.en) || {};
+  var lang = window.getLang() || 'zh';
+  return '<script>(function(){'
+    + 'var D=' + JSON.stringify(dict).replace(/</g, '\\u003c') + ';'
+    + 'var L=' + JSON.stringify(lang) + ';'
+    + 'window.t=function(zh,v){var o=zh;if(L===\'en\'&&D.hasOwnProperty(zh))o=D[zh];'
+    + 'if(v&&typeof v===\'object\'){o=String(o).replace(/\\{(\\w+)\\}/g,function(m,k){return (v[k]!=null)?v[k]:m;});}'
+    + 'return o;};'
+    + '})();<\/script>';
+}
+
 const EXPORTER_VIEWER_SOURCE = String.raw`import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -264,12 +278,12 @@ function loadModel() {
 
       lastStats = { size, maxDim, vertices, triangles, meshes, materials };
       const fmt = (n) => n.toLocaleString();
-      statsEl.textContent = '尺寸: ' + size.x.toFixed(2) + ' × ' + size.y.toFixed(2) + ' × ' + size.z.toFixed(2)
-        + '  |  顶点: ' + fmt(vertices)
-        + '  |  三角面: ' + fmt(Math.round(triangles))
-        + '  |  网格: ' + meshes
-        + '  |  材质: ' + materials;
-      infoEl.textContent = '已加载: ' + MODEL_NAME + '  |  拖拽旋转 | 滚轮缩放 | 右键/中键平移';
+      statsEl.textContent = t('尺寸') + ': ' + size.x.toFixed(2) + ' × ' + size.y.toFixed(2) + ' × ' + size.z.toFixed(2)
+        + '  |  ' + t('顶点') + ': ' + fmt(vertices)
+        + '  |  ' + t('三角面') + ': ' + fmt(Math.round(triangles))
+        + '  |  ' + t('网格') + ': ' + meshes
+        + '  |  ' + t('材质') + ': ' + materials;
+      infoEl.textContent = t('已加载') + ': ' + MODEL_NAME + '  |  ' + t('拖拽旋转') + ' | ' + t('滚轮缩放') + ' | ' + t('右键/中键平移');
 
       // 加载完成：释放 base64 源与临时 Blob URL，降低内存占用
       try { if (blobUrl) URL.revokeObjectURL(blobUrl); } catch (e) {}
@@ -279,7 +293,7 @@ function loadModel() {
     undefined,
     (err) => {
       console.error(err);
-      showError('加载模型失败: ' + (err.message || err));
+      showError(t('加载模型失败') + ': ' + (err.message || err));
     }
   );
 }
@@ -429,10 +443,10 @@ window.addEventListener('resize', () => {
 
 // ============ 内置简易动画（无需建模，直接绑定到部位） ============
 var PRESET_ANIMS = {
-  'jump':  { label: '（内置）向上跳一下', dur: 0.55, amp: function(d){ return d * 0.4; },          apply: function(o,t,b,a){ o.position.y = b.y + a * Math.sin(Math.PI * t); } },
-  'shake': { label: '（内置）原地摇晃',   dur: 0.60, amp: function(){ return 0.13; },               apply: function(o,t,b,a){ o.rotation.z = b.rz + a * Math.sin(4 * Math.PI * t); } },
-  'spin':  { label: '（内置）旋转一圈',   dur: 1.00, amp: function(){ return Math.PI * 2; },        apply: function(o,t,b,a){ o.rotation.y = b.ry + a * t; } },
-  'nod':   { label: '（内置）点头',       dur: 0.60, amp: function(){ return 0.28; },               apply: function(o,t,b,a){ o.rotation.x = b.rx + a * Math.sin(Math.PI * t); } },
+  'jump':  { label: t('（内置）向上跳一下'), dur: 0.55, amp: function(d){ return d * 0.4; },          apply: function(o,t,b,a){ o.position.y = b.y + a * Math.sin(Math.PI * t); } },
+  'shake': { label: t('（内置）原地摇晃'),   dur: 0.60, amp: function(){ return 0.13; },               apply: function(o,t,b,a){ o.rotation.z = b.rz + a * Math.sin(4 * Math.PI * t); } },
+  'spin':  { label: t('（内置）旋转一圈'),   dur: 1.00, amp: function(){ return Math.PI * 2; },        apply: function(o,t,b,a){ o.rotation.y = b.ry + a * t; } },
+  'nod':   { label: t('（内置）点头'),       dur: 0.60, amp: function(){ return 0.28; },               apply: function(o,t,b,a){ o.rotation.x = b.rx + a * Math.sin(Math.PI * t); } },
 };
 var activePresets = [];
 
@@ -579,10 +593,11 @@ function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions,
     .replace('__MODEL_ID__', JSON.stringify(modelId || ''));
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${window.getLang() === 'en' ? 'en' : 'zh-CN'}">
 <head>
 <meta charset="UTF-8">
-<title>3D 查看器 - ${escapeHtml(modelName)}</title>
+${buildExporterI18n()}
+<title>${escapeHtml(t('3D 查看器'))} - ${escapeHtml(modelName)}</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; overflow: hidden; background: ${bodyBg}; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e6e9ef; }
@@ -631,7 +646,7 @@ function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions,
 <body>
 <div id="toolbar"></div>
 <div id="viewer"></div>
-<div id="info">⏳ 加载中: ${escapeHtml(modelName)}</div>
+<div id="info">⏳ ${escapeHtml(t('加载中'))}: ${escapeHtml(modelName)}</div>
 <div id="stats"></div>
 <div id="error"></div>
 
@@ -841,7 +856,7 @@ function renderList(fid) {
   var gridEl = document.getElementById('grid');
   var html = '';
   if (folder.entries.length === 0) {
-    html = '<div class="empty">空目录</div>';
+    html = '<div class="empty">' + t('空目录') + '</div>';
   } else {
     folder.entries.forEach(function(e) {
       if (e.kind === 'folder') {
@@ -1135,10 +1150,10 @@ function animate(time) {
 
 // ============ 内置简易动画（无需建模，直接绑定到部位） ============
 var PRESET_ANIMS = {
-  'jump':  { label: '（内置）向上跳一下', dur: 0.55, amp: function(d){ return d * 0.4; },          apply: function(o,t,b,a){ o.position.y = b.y + a * Math.sin(Math.PI * t); } },
-  'shake': { label: '（内置）原地摇晃',   dur: 0.60, amp: function(){ return 0.13; },               apply: function(o,t,b,a){ o.rotation.z = b.rz + a * Math.sin(4 * Math.PI * t); } },
-  'spin':  { label: '（内置）旋转一圈',   dur: 1.00, amp: function(){ return Math.PI * 2; },        apply: function(o,t,b,a){ o.rotation.y = b.ry + a * t; } },
-  'nod':   { label: '（内置）点头',       dur: 0.60, amp: function(){ return 0.28; },               apply: function(o,t,b,a){ o.rotation.x = b.rx + a * Math.sin(Math.PI * t); } },
+  'jump':  { label: t('（内置）向上跳一下'), dur: 0.55, amp: function(d){ return d * 0.4; },          apply: function(o,t,b,a){ o.position.y = b.y + a * Math.sin(Math.PI * t); } },
+  'shake': { label: t('（内置）原地摇晃'),   dur: 0.60, amp: function(){ return 0.13; },               apply: function(o,t,b,a){ o.rotation.z = b.rz + a * Math.sin(4 * Math.PI * t); } },
+  'spin':  { label: t('（内置）旋转一圈'),   dur: 1.00, amp: function(){ return Math.PI * 2; },        apply: function(o,t,b,a){ o.rotation.y = b.ry + a * t; } },
+  'nod':   { label: t('（内置）点头'),       dur: 0.60, amp: function(){ return 0.28; },               apply: function(o,t,b,a){ o.rotation.x = b.rx + a * Math.sin(Math.PI * t); } },
 };
 var activePresets = [];
 function playPreset(name, obj, del) {
@@ -1383,9 +1398,10 @@ function buildGalleryHTML(folderName, entries, modelsByNodeId, rootDesc, rootBg)
   var bodyBg = rootBg || '#080b14';
 
   return '<!DOCTYPE html>\n'
-+ '<html lang="zh-CN">\n'
++ '<html lang="' + (window.getLang() === 'en' ? 'en' : 'zh-CN') + '">\n'
 + '<head>\n'
 + '<meta charset="UTF-8">\n'
++ buildExporterI18n() + '\n'
 + '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
 + '<title>' + escapedName + '</title>\n'
 + '<style>\n'

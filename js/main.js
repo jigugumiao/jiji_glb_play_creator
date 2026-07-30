@@ -49,6 +49,8 @@ const dom = {
   mainEl: document.querySelector('.main'),
   btnTogglePanel: $('btn-toggle-panel'),
   togglePanelLabel: $('toggle-panel-label'),
+  btnLang: $('btn-lang'),
+  langLabel: $('lang-label'),
 };
 
 // ============ 图标（内联 SVG，无 emoji） ============
@@ -106,6 +108,7 @@ function base64FromFile(file) {
 
 // ============ 模态对话框 ============
 function showModal({ title, label, placeholder, value = '', extra = '' }) {
+  title = t(title); label = t(label); placeholder = t(placeholder);
   return new Promise((resolve) => {
     dom.modalTitle.textContent = title;
     dom.modalLabel.textContent = label;
@@ -134,6 +137,7 @@ function showModal({ title, label, placeholder, value = '', extra = '' }) {
 
 // 确认对话框（无输入框，仅 OK/Cancel）
 function showConfirm(title, message, extra = '') {
+  title = t(title); message = t(message);
   return new Promise((resolve) => {
     dom.modalTitle.textContent = title;
     dom.modalLabel.textContent = '';
@@ -169,7 +173,7 @@ function renderTree() {
   const allNodes = Object.values(tree.nodes);
   const folderCount = allNodes.filter(n => n.type === 'folder').length;
   const modelCount = allNodes.filter(n => n.type === 'model').length;
-  dom.treeStats.textContent = `文件夹 ${folderCount} · 模型 ${modelCount}`;
+  dom.treeStats.textContent = `${t('文件夹')} ${folderCount} · ${t('模型')} ${modelCount}`;
 
   // 资源树过滤：命中节点 + 其所有祖先 + 路径上的文件夹全部显示；过滤时强制展开
   const visible = computeTreeVisible();
@@ -332,7 +336,7 @@ function bindTreeEvents() {
           return;
         }
         DB.moveNode(draggedId, id);
-        toast('已移动到 ' + (DB.getNode(id)?.name || '文件夹'));
+        toast(t('已移动到') + ' ' + (DB.getNode(id)?.name || t('文件夹')));
         renderAll();
       });
     }
@@ -359,10 +363,10 @@ function renderCrumbs() {
   const projName = (state.currentProjectId && DB.getProjectName(state.currentProjectId)) || '项目';
   let html = `<span class="crumb crumb-root" data-id="">${escapeHtml(projName)}</span><span class="crumb-sep">/</span>`;
   if (state.currentFolderId === null) {
-    html += `<span class="crumb" data-id="">${ICONS.home} 根目录</span>`;
+    html += `<span class="crumb" data-id="">${ICONS.home} ${t('根目录')}</span>`;
   } else {
     const pathIds = DB.getPath(state.currentFolderId);
-    html += `<span class="crumb" data-id="">${ICONS.home} 根目录</span>`;
+    html += `<span class="crumb" data-id="">${ICONS.home} ${t('根目录')}</span>`;
     for (const id of pathIds) {
       const n = DB.getNode(id);
       if (!n) continue;
@@ -395,7 +399,7 @@ async function renderModelInfo() {
     dom.infoContent.innerHTML = `
       <div class="empty-grid" style="height:auto;padding:20px 0">
         <div class="icon">${ICONS.cube}</div>
-        <div class="hint">选择一个模型查看详情</div>
+        <div class="hint">${t('选择一个模型查看详情')}</div>
       </div>`;
     return;
   }
@@ -409,14 +413,14 @@ async function renderModelInfo() {
     <div class="panel-section">
       <h4 class="collapse-toggle" data-body="basic-info-body" style="cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;margin-bottom:${basicInfoExpanded ? '8px' : '0'}" title="点击展开 / 收起基本信息">
         <span class="collapse-arrow" style="display:inline-block;font-size:10px;line-height:1;color:var(--txt-2)">${basicInfoExpanded ? '▾' : '▸'}</span>
-        基本信息
+        ${t('基本信息')}
       </h4>
       <div class="collapse-body" id="basic-info-body" ${basicInfoExpanded ? '' : 'hidden'}>
-        <div class="kv-row"><span class="k">名称</span><input class="info-name-input" id="info-name-input" value="${escapeHtml(n.name)}" title="点击修改名称，回车或失焦生效" spellcheck="false"></div>
-        <div class="kv-row"><span class="k">类型</span><span class="v">GLB 模型</span></div>
-        <div class="kv-row"><span class="k">大小</span><span class="v">${formatSize(n.size || 0)}</span></div>
-        <div class="kv-row"><span class="k">路径</span><span class="v" style="font-size:11px">${escapeHtml(path)}</span></div>
-        <div class="kv-row"><span class="k">创建时间</span><span class="v" style="font-size:11px">${new Date(n.createdAt).toLocaleString('zh-CN')}</span></div>
+        <div class="kv-row"><span class="k">${t('名称')}</span><input class="info-name-input" id="info-name-input" value="${escapeHtml(n.name)}" title="点击修改名称，回车或失焦生效" spellcheck="false"></div>
+        <div class="kv-row"><span class="k">${t('类型')}</span><span class="v">${t('GLB 模型')}</span></div>
+        <div class="kv-row"><span class="k">${t('大小')}</span><span class="v">${formatSize(n.size || 0)}</span></div>
+        <div class="kv-row"><span class="k">${t('路径')}</span><span class="v" style="font-size:11px">${escapeHtml(path)}</span></div>
+        <div class="kv-row"><span class="k">${t('创建时间')}</span><span class="v" style="font-size:11px">${new Date(n.createdAt).toLocaleString('zh-CN')}</span></div>
       </div>
     </div>`;
 
@@ -425,22 +429,22 @@ async function renderModelInfo() {
     <div class="panel-section">
       <h4 class="collapse-toggle" data-body="geo-info-body" style="cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;margin-bottom:${geoInfoExpanded ? '8px' : '0'}" title="点击展开 / 收起几何信息">
         <span class="collapse-arrow" style="display:inline-block;font-size:10px;line-height:1;color:var(--txt-2)">${geoInfoExpanded ? '▾' : '▸'}</span>
-        几何信息
+        ${t('几何信息')}
       </h4>
       <div class="collapse-body" id="geo-info-body" ${geoInfoExpanded ? '' : 'hidden'}>
-        <div class="kv-row"><span class="k">包围盒</span><span class="v">${stats.size.x.toFixed(2)} × ${stats.size.y.toFixed(2)} × ${stats.size.z.toFixed(2)}</span></div>
-        <div class="kv-row"><span class="k">最大尺寸</span><span class="v">${stats.maxDim.toFixed(2)}</span></div>
-        <div class="kv-row"><span class="k">网格数</span><span class="v">${stats.meshes || 0}</span></div>
-        <div class="kv-row"><span class="k">顶点数</span><span class="v">${formatNumber(stats.vertices || 0)}</span></div>
-        <div class="kv-row"><span class="k">三角形</span><span class="v">${formatNumber(Math.round(stats.triangles || 0))}</span></div>
-        <div class="kv-row"><span class="k">材质数</span><span class="v">${stats.materials || 0}</span></div>
+        <div class="kv-row"><span class="k">${t('包围盒')}</span><span class="v">${stats.size.x.toFixed(2)} × ${stats.size.y.toFixed(2)} × ${stats.size.z.toFixed(2)}</span></div>
+        <div class="kv-row"><span class="k">${t('最大尺寸')}</span><span class="v">${stats.maxDim.toFixed(2)}</span></div>
+        <div class="kv-row"><span class="k">${t('网格数')}</span><span class="v">${stats.meshes || 0}</span></div>
+        <div class="kv-row"><span class="k">${t('顶点数')}</span><span class="v">${formatNumber(stats.vertices || 0)}</span></div>
+        <div class="kv-row"><span class="k">${t('三角形')}</span><span class="v">${formatNumber(Math.round(stats.triangles || 0))}</span></div>
+        <div class="kv-row"><span class="k">${t('材质数')}</span><span class="v">${stats.materials || 0}</span></div>
       </div>
     </div>`;
 
     if (viewer.getMeshList().length > 0) {
       html += `
     <div class="panel-section">
-      <h4>点击交互配置</h4>
+      <h4>${t('点击交互配置')}</h4>
       <div class="hint" style="font-size:11px;margin-bottom:8px;color:#8b93a3">点击模型上的部位，触发此处绑定的动画与音效（音效每次点击都会播放）。下面每个选项含义：<br>· <b>点击时响应</b>：取消后点击该物体无任何反应；<br>· <b>来回播放</b>：点一下正向播放，再点一下倒放回开头（需要两次点击）；<br>· <b>动画自动归位</b>：点一下即自动完整来回一次（正向播完自动倒放回开头，连续无需再次点击）；<br>· <b>动画结束后删除该物体</b>：动画（来回）播放完毕后，该物体从场景中消失，不可再点击；<br>· <b>设为结束物体</b>：在联动剧情工具里召唤该 3D 界面后，点击此物体即结束 3D 界面、继续剧情（可设置多个）。<br>音效在左侧「音效库」标签里导入与管理。</div>
       <div id="interact-list"></div>
     </div>`;
@@ -450,12 +454,12 @@ async function renderModelInfo() {
   // 视图设置：关闭手动旋转（仅影响导出成品，不影响编辑器内编辑）
   html += `
     <div class="panel-section">
-      <h4>视图设置</h4>
+      <h4>${t('视图设置')}</h4>
       <label class="switch-row" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--txt-1);margin-top:6px">
         <input type="checkbox" id="ch-lock-rotation" ${n.lockRotation ? 'checked' : ''}>
-        <span>关闭手动旋转</span>
+        <span>${t('关闭手动旋转')}</span>
       </label>
-      <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">勾选后，导出的成品（独立查看器 / 剧情编辑器中的 3D 界面）将禁止手动旋转，固定在默认视角上。</div>
+      <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('勾选后，导出的成品（独立查看器 / 剧情编辑器中的 3D 界面）将禁止手动旋转，固定在默认视角上。')}</div>
     </div>`;
 
   dom.infoContent.innerHTML = html;
@@ -540,14 +544,14 @@ async function renderModelInfo() {
       }
     }
     if (meshes.length === 0) {
-      listEl.innerHTML = '<div class="hint" style="font-size:11px;color:#8b93a3">该模型没有可识别的部位网格。</div>';
+      listEl.innerHTML = '<div class="hint" style="font-size:11px;color:#8b93a3">' + t('该模型没有可识别的部位网格。') + '</div>';
     } else {
       listEl.innerHTML = meshes.map(m => {
         const e = norm[m.name] || { clip: '', sound: '', respond: true, pingpong: false, autoReturn: false, deleteAfter: false, exit: false, clipIn: 0, clipOut: null, once: true };
         const clipOpts = clips.map(c =>
           `<option value="${escapeHtml(c)}" ${e.clip === c ? 'selected' : ''}>${escapeHtml(c)}</option>`
         ).join('')
-          + (presetClips.length ? `<optgroup label="内置简易动画">${presetClips.map(p => `<option value="${escapeHtml(p.value)}" ${e.clip === p.value ? 'selected' : ''}>${escapeHtml(p.label)}</option>`).join('')}</optgroup>` : '');
+          + (presetClips.length ? `<optgroup label="${t('内置简易动画')}">${presetClips.map(p => `<option value="${escapeHtml(p.value)}" ${e.clip === p.value ? 'selected' : ''}>${escapeHtml(t(p.label))}</option>`).join('')}</optgroup>` : '');
         const soundOpts = sounds.map(s =>
           `<option value="${escapeHtml(s.id)}" ${e.sound === s.id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`
         ).join('');
@@ -558,7 +562,7 @@ async function renderModelInfo() {
         const exitChk = e.exit ? 'checked' : '';
         // 所属交互链下拉（与底部交互链面板共享同一份链数据）
         const curChain = chainIdOfMesh(m.name);
-        const chainOpts = ['<option value="">— 不属于任何链（可任意触发）—</option>']
+        const chainOpts = ['<option value="">' + t('— 不属于任何链（可任意触发）—') + '</option>']
           .concat(getModelChains().map(ch => `<option value="${escapeHtml(ch.id)}" ${ch.id === curChain ? 'selected' : ''}>${escapeHtml(ch.name)}</option>`))
           .join('');
         const multiChk = (e.once === false) ? 'checked' : '';
@@ -566,52 +570,52 @@ async function renderModelInfo() {
         <div class="interact-block collapsed${respondChk ? '' : ' respond-off'}" data-mesh="${escapeHtml(m.name)}">
           <div class="interact-trigger-head">
             <span class="interact-collapse-caret">▸</span>
-            <span class="interact-trigger-label">触发部位</span>
+            <span class="interact-trigger-label">${t('触发部位')}</span>
             <span class="interact-mesh" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
           </div>
-          <label class="interact-flag interact-master" title="取消勾选后，点击该部位不会有任何反应（不放大、不播放动画、不播放音效）">
-            <input type="checkbox" class="interact-respond" data-mesh="${escapeHtml(m.name)}" ${respondChk}><span>点击该部位时触发以下效果</span>
+          <label class="interact-flag interact-master" title="${t('取消勾选后，点击该部位不会有任何反应（不放大、不播放动画、不播放音效）')}">
+            <input type="checkbox" class="interact-respond" data-mesh="${escapeHtml(m.name)}" ${respondChk}><span>${t('点击该部位时触发以下效果')}</span>
           </label>
           <div class="interact-section">
-            <div class="interact-section-title">触发后播放</div>
+            <div class="interact-section-title">${t('触发后播放')}</div>
             <div class="interact-row">
-              <span class="interact-row-label">动画</span>
+              <span class="interact-row-label">${t('动画')}</span>
               <select class="interact-clip" data-mesh="${escapeHtml(m.name)}">
-                <option value="">— 选择动画 —</option>${clipOpts}
+                <option value="">${t('— 选择动画 —')}</option>${clipOpts}
               </select>
             </div>
             <div class="interact-row">
-              <span class="interact-row-label">音效</span>
+              <span class="interact-row-label">${t('音效')}</span>
               <select class="interact-sound" data-mesh="${escapeHtml(m.name)}">
-                <option value="">— 选择音效 —</option>${soundOpts}
+                <option value="">${t('— 选择音效 —')}</option>${soundOpts}
               </select>
             </div>
             <div class="interact-row">
-              <span class="interact-row-label">增效</span>
-              <select class="interact-loop" data-mesh="${escapeHtml(m.name)}" title="动画增效：无 / 动画来回播放（点一下正向，再点一下倒放回开头）/ 动画自动返回（点一下自动完整来回一次，正向播完自动倒放回开头）">
-                <option value="none" ${loopVal === 'none' ? 'selected' : ''}>无</option>
-                <option value="pingpong" ${loopVal === 'pingpong' ? 'selected' : ''}>动画来回播放</option>
-                <option value="autoreturn" ${loopVal === 'autoreturn' ? 'selected' : ''}>动画自动返回</option>
+              <span class="interact-row-label">${t('增效')}</span>
+              <select class="interact-loop" data-mesh="${escapeHtml(m.name)}" title="${t('动画增效：无 / 动画来回播放（点一下正向，再点一下倒放回开头）/ 动画自动返回（点一下自动完整来回一次，正向播完自动倒放回开头）')}">
+                <option value="none" ${loopVal === 'none' ? 'selected' : ''}>${t('无')}</option>
+                <option value="pingpong" ${loopVal === 'pingpong' ? 'selected' : ''}>${t('动画来回播放')}</option>
+                <option value="autoreturn" ${loopVal === 'autoreturn' ? 'selected' : ''}>${t('动画自动返回')}</option>
               </select>
             </div>
           </div>
           <div class="interact-section kind-exit">
-            <div class="interact-section-title">触发后效果</div>
-            <label class="interact-flag" title="动画结束后删除该触发部位：动画（来回）播放完毕后，该部位从场景中消失，不可再点击">
-              <input type="checkbox" class="interact-deleteafter" data-mesh="${escapeHtml(m.name)}" ${delChk}><span>动画结束后删除该触发部位</span>
+            <div class="interact-section-title">${t('触发后效果')}</div>
+            <label class="interact-flag" title="${t('动画结束后删除该触发部位：动画（来回）播放完毕后，该部位从场景中消失，不可再点击')}">
+              <input type="checkbox" class="interact-deleteafter" data-mesh="${escapeHtml(m.name)}" ${delChk}><span>${t('动画结束后删除该触发部位')}</span>
             </label>
-            <label class="interact-flag" title="在联动剧情工具里召唤该 3D 界面后，点击此部位即结束 3D 界面、继续剧情（可设置多个结束部位）">
-              <input type="checkbox" class="interact-exit" data-mesh="${escapeHtml(m.name)}" ${exitChk}><span class="exit-label">点击该触发部位结束 3D 界面、继续剧情</span>
+            <label class="interact-flag" title="${t('在联动剧情工具里召唤该 3D 界面后，点击此部位即结束 3D 界面、继续剧情（可设置多个结束部位）')}">
+              <input type="checkbox" class="interact-exit" data-mesh="${escapeHtml(m.name)}" ${exitChk}><span class="exit-label">${t('点击该触发部位结束 3D 界面、继续剧情')}</span>
             </label>
           </div>
           <div class="interact-section kind-chain">
-            <div class="interact-section-title">交互链与触发限制</div>
+            <div class="interact-section-title">${t('交互链与触发限制')}</div>
             <div class="interact-row">
-              <span class="interact-row-label">所属交互链</span>
+              <span class="interact-row-label">${t('所属交互链')}</span>
               <select class="interact-chain" data-mesh="${escapeHtml(m.name)}">${chainOpts}</select>
             </div>
-            <label class="interact-flag" title="默认每个部位只响应一次点击（防止解谜动画被反向播放，如盒子打开后别关上）。勾选后允许重复点击。">
-              <input type="checkbox" class="interact-multi" data-mesh="${escapeHtml(m.name)}" ${multiChk}><span>允许多次点击</span>
+            <label class="interact-flag" title="${t('默认每个部位只响应一次点击（防止解谜动画被反向播放，如盒子打开后别关上）。勾选后允许重复点击。')}">
+              <input type="checkbox" class="interact-multi" data-mesh="${escapeHtml(m.name)}" ${multiChk}><span>${t('允许多次点击')}</span>
             </label>
           </div>
         </div>`;
@@ -691,7 +695,7 @@ async function renderFolderInfo() {
     dom.folderContent.innerHTML = `
       <div class="empty-grid" style="height:auto;padding:20px 0">
         <div class="icon">${ICONS.folder}</div>
-        <div class="hint">未选择文件夹</div>
+        <div class="hint">${t('未选择文件夹')}</div>
       </div>`;
     return;
   }
@@ -704,23 +708,23 @@ async function renderFolderInfo() {
 
   let html = `
     <div class="panel-section">
-      <h4>基本信息</h4>
-      <div class="kv-row"><span class="k">名称</span><span class="v">${escapeHtml(name)}</span></div>
-      <div class="kv-row"><span class="k">类型</span><span class="v">文件夹</span></div>
-      ${path ? `<div class="kv-row"><span class="k">路径</span><span class="v" style="font-size:11px">${escapeHtml(path)}</span></div>` : ''}
-      ${createdAt ? `<div class="kv-row"><span class="k">创建时间</span><span class="v" style="font-size:11px">${escapeHtml(createdAt)}</span></div>` : ''}
-      <div class="kv-row"><span class="k">子项数量</span><span class="v">${childCount}</span></div>
+      <h4>${t('基本信息')}</h4>
+      <div class="kv-row"><span class="k">${t('名称')}</span><span class="v">${escapeHtml(name)}</span></div>
+      <div class="kv-row"><span class="k">${t('类型')}</span><span class="v">${t('文件夹')}</span></div>
+      ${path ? `<div class="kv-row"><span class="k">${t('路径')}</span><span class="v" style="font-size:11px">${escapeHtml(path)}</span></div>` : ''}
+      ${createdAt ? `<div class="kv-row"><span class="k">${t('创建时间')}</span><span class="v" style="font-size:11px">${escapeHtml(createdAt)}</span></div>` : ''}
+      <div class="kv-row"><span class="k">${t('子项数量')}</span><span class="v">${childCount}</span></div>
     </div>
 
     <div class="panel-section">
-      <h4>文件夹描述</h4>
-      <div class="hint" style="font-size:11px;margin-bottom:6px;color:#8b93a3">导出该目录时，描述会显示在目录顶部（可选，留空则不显示）。输入后焦点移开即自动保存。</div>
+      <h4>${t('文件夹描述')}</h4>
+      <div class="hint" style="font-size:11px;margin-bottom:6px;color:#8b93a3">${t('导出该目录时，描述会显示在目录顶部（可选，留空则不显示）。输入后焦点移开即自动保存。')}</div>
       <textarea id="folder-desc" class="folder-desc" placeholder="可选，留空则不显示">${escapeHtml(desc)}</textarea>
     </div>
 
     <div class="panel-section">
-      <h4>背景色</h4>
-      <div class="hint" style="font-size:11px;margin-bottom:6px;color:#8b93a3">设置该文件夹（及子级）的 3D 查看器背景色。改动即时生效并自动保存。</div>
+      <h4>${t('背景色')}</h4>
+      <div class="hint" style="font-size:11px;margin-bottom:6px;color:#8b93a3">${t('设置该文件夹（及子级）的 3D 查看器背景色。改动即时生效并自动保存。')}</div>
       <div id="folder-bg-inline"></div>
     </div>`;
 
@@ -788,18 +792,18 @@ function mountInlineBg(container, nodeId) {
 
   container.innerHTML = '<div class="bg-modal-body">'
     + '<div class="bg-mode-toggle">'
-    + '<label class="bg-mode-label"><input type="radio" name="ibg-mode" value="solid" ' + solidChecked + '> 纯色</label>'
-    + '<label class="bg-mode-label"><input type="radio" name="ibg-mode" value="gradient" ' + gradChecked + '> 渐变</label>'
+    + '<label class="bg-mode-label"><input type="radio" name="ibg-mode" value="solid" ' + solidChecked + '> ' + t('纯色') + '</label>'
+    + '<label class="bg-mode-label"><input type="radio" name="ibg-mode" value="gradient" ' + gradChecked + '> ' + t('渐变') + '</label>'
     + '</div>'
-    + '<div class="bg-row" id="ibg-solid" style="' + solidDisplay + '"><label>颜色</label><input type="color" id="ibg-c1" value="' + c1 + '"></div>'
+    + '<div class="bg-row" id="ibg-solid" style="' + solidDisplay + '"><label>' + t('颜色') + '</label><input type="color" id="ibg-c1" value="' + c1 + '"></div>'
     + '<div class="bg-row" id="ibg-gradient" style="' + gradDisplay + 'flex-direction:column;align-items:stretch;gap:6px">'
-    + '<div><label>起始色</label><input type="color" id="ibg-gc1" value="' + c1 + '"></div>'
-    + '<div><label>结束色</label><input type="color" id="ibg-gc2" value="' + c2 + '"></div>'
-    + '<div><label>方向</label><select id="ibg-gdir"><option value="vertical"' + (dir === 'vertical' ? ' selected' : '') + '>上下</option><option value="horizontal"' + (dir === 'horizontal' ? ' selected' : '') + '>左右</option><option value="diagonal"' + (dir === 'diagonal' ? ' selected' : '') + '>对角</option><option value="radial"' + (dir === 'radial' ? ' selected' : '') + '>径向</option></select></div>'
+    + '<div><label>' + t('起始色') + '</label><input type="color" id="ibg-gc1" value="' + c1 + '"></div>'
+    + '<div><label>' + t('结束色') + '</label><input type="color" id="ibg-gc2" value="' + c2 + '"></div>'
+    + '<div><label>' + t('方向') + '</label><select id="ibg-gdir"><option value="vertical"' + (dir === 'vertical' ? ' selected' : '') + '>' + t('上下') + '</option><option value="horizontal"' + (dir === 'horizontal' ? ' selected' : '') + '>' + t('左右') + '</option><option value="diagonal"' + (dir === 'diagonal' ? ' selected' : '') + '>' + t('对角') + '</option><option value="radial"' + (dir === 'radial' ? ' selected' : '') + '>' + t('径向') + '</option></select></div>'
     + '</div>'
-    + '<div class="bg-presets"><span class="bg-presets-label">预设</span><div class="bg-preset-list">' + presetHtml + '</div></div>'
+    + '<div class="bg-presets"><span class="bg-presets-label">' + t('预设') + '</span><div class="bg-preset-list">' + presetHtml + '</div></div>'
     + '<div style="display:flex;gap:8px;margin-top:4px">'
-    + '<button class="btn" id="ibg-reset" style="flex:1">恢复继承颜色</button>'
+    + '<button class="btn" id="ibg-reset" style="flex:1">' + t('恢复继承颜色') + '</button>'
     + '</div>'
     + '</div>';
 
@@ -996,26 +1000,26 @@ function renderChains() {
   const body = $('chain-body');
   if (!body) return;
   if (chains.length === 0) {
-    body.innerHTML = '<div class="chain-empty">还没有交互链。点击「+ 新建交互链」，再把右侧各部位的「所属交互链」下拉选到这条链，即可排成解谜顺序。</div>';
+    body.innerHTML = '<div class="chain-empty">' + t('还没有交互链。点击「+ 新建交互链」，再把右侧各部位的「所属交互链」下拉选到这条链，即可排成解谜顺序。') + '</div>';
     bindChainPanel();   // 空链状态也要绑定「+ 新建交互链」按钮，否则首次点击无反应
     return;
   }
   body.innerHTML = chains.map(ch => {
     const members = ch.order.map((name, idx) => `
-      <div class="chain-member" draggable="true" data-chain="${escapeHtml(ch.id)}" data-idx="${idx}" data-mesh="${escapeHtml(name)}" title="按住拖动调整顺序">
+      <div class="chain-member" draggable="true" data-chain="${escapeHtml(ch.id)}" data-idx="${idx}" data-mesh="${escapeHtml(name)}" title="${t('按住拖动调整顺序')}">
         <span class="m-order">${idx + 1}</span>
         <span class="m-name">${escapeHtml(name)}</span>
-        <button class="m-remove" data-chain="${escapeHtml(ch.id)}" data-mesh="${escapeHtml(name)}" title="移出该链">×</button>
+        <button class="m-remove" data-chain="${escapeHtml(ch.id)}" data-mesh="${escapeHtml(name)}" title="${t('移出该链')}">×</button>
       </div>`).join('');
     return `
       <div class="chain-card" data-chain="${escapeHtml(ch.id)}">
         <div class="chain-card-head">
-          <input class="chain-name-input" data-chain="${escapeHtml(ch.id)}" value="${escapeHtml(ch.name)}" title="点击重命名该交互链">
-          <span class="chain-count">${ch.order.length} 个部位</span>
-          <button class="chain-del" data-chain="${escapeHtml(ch.id)}">删除该链</button>
+          <input class="chain-name-input" data-chain="${escapeHtml(ch.id)}" value="${escapeHtml(ch.name)}" title="${t('点击重命名该交互链')}">
+          <span class="chain-count">${t('{count} 个部位', { count: ch.order.length })}</span>
+          <button class="chain-del" data-chain="${escapeHtml(ch.id)}">${t('删除该链')}</button>
         </div>
         <div class="chain-members" data-chain="${escapeHtml(ch.id)}">
-          ${members || '<span class="chain-drop-hint">把右侧部位的下拉选到这条链即可加入</span>'}
+          ${members || '<span class="chain-drop-hint">' + t('把右侧部位的下拉选到这条链即可加入') + '</span>'}
         </div>
       </div>`;
   }).join('');
@@ -1119,20 +1123,20 @@ async function renderSoundsLibrary() {
 
   let html = `
     <div class="panel-section" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <h4 style="margin:0">音效库 (${sounds.length})</h4>
-      <button class="btn" id="btn-import-sound-lib" style="padding:4px 10px;font-size:12px">导入音效</button>
+      <h4 style="margin:0">${t('音效库')} (${sounds.length})</h4>
+      <button class="btn" id="btn-import-sound-lib" style="padding:4px 10px;font-size:12px">${t('导入音效')}</button>
     </div>`;
 
   if (sounds.length === 0) {
-    html += `<div class="hint" style="font-size:12px;color:var(--txt-2)">暂无音效。点上方「导入音效」，或顶栏「导入音效」添加音频文件。</div>`;
+    html += `<div class="hint" style="font-size:12px;color:var(--txt-2)">${t('暂无音效。点上方「导入音效」，或顶栏「导入音效」添加音频文件。')}</div>`;
   } else {
     html += `<div class="sound-list">` + sounds.map(s => `
       <div class="sound-item" data-sid="${escapeHtml(s.id)}">
-        <button class="sound-play" data-url="${escapeHtml(dataMap[s.id] || '')}" title="试听">${ICONS.play}</button>
+        <button class="sound-play" data-url="${escapeHtml(dataMap[s.id] || '')}" title="${t('试听')}">${ICONS.play}</button>
         <span class="sound-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
         <span class="sound-size">${formatSize(approxSize(dataMap[s.id]))}</span>
-        <button class="sound-rename" data-sid="${escapeHtml(s.id)}" title="重命名音效">${ICONS.pencil}</button>
-        <button class="sound-del" data-sid="${escapeHtml(s.id)}" title="删除音效">${ICONS.trash}</button>
+        <button class="sound-rename" data-sid="${escapeHtml(s.id)}" title="${t('重命名音效')}">${ICONS.pencil}</button>
+        <button class="sound-del" data-sid="${escapeHtml(s.id)}" title="${t('删除音效')}">${ICONS.trash}</button>
       </div>`).join('') + `</div>`;
   }
   dom.soundsContent.innerHTML = html;
@@ -1199,14 +1203,14 @@ async function updateStatusBar() {
   const models = Object.values(tree.nodes).filter(n => n.type === 'model');
   const folders = Object.values(tree.nodes).filter(n => n.type === 'folder');
   const total = models.reduce((s, n) => s + (n.size || 0), 0);
-  dom.statModels.textContent = `模型: ${models.length}`;
-  dom.statFolders.textContent = `文件夹: ${folders.length}`;
-  dom.statStorage.textContent = `原始: ${formatSize(total)}`;
+  dom.statModels.textContent = t('模型') + ': ' + models.length;
+  dom.statFolders.textContent = t('文件夹') + ': ' + folders.length;
+  dom.statStorage.textContent = t('原始') + ': ' + formatSize(total);
   try {
     const { totalBytes } = await DB.blobStats();
     dom.statStorage.textContent += ` (Base64: ${formatSize(totalBytes)})`;
   } catch (e) { /* ignore */ }
-  dom.statStatus.textContent = '● 就绪';
+  dom.statStatus.textContent = '● ' + t('就绪');
   dom.statStatus.className = 'item ok';
 }
 
@@ -1215,14 +1219,14 @@ function markSaved() {
   const t = new Date();
   const hh = String(t.getHours()).padStart(2, '0');
   const mm = String(t.getMinutes()).padStart(2, '0');
-  if (dom.statSaved) dom.statSaved.textContent = `已保存于 ${hh}:${mm}`;
+  if (dom.statSaved) dom.statSaved.textContent = t('已保存于') + ' ' + hh + ':' + mm;
 }
 function updateSelectionStatus() {
   if (dom.statSelected) {
     let label = '—';
     if (state.selectedModelId) { const n = DB.getNode(state.selectedModelId); label = n ? n.name : '—'; }
-    else if (state.selectedFolderId) { const n = DB.getNode(state.selectedFolderId); label = n ? n.name : '根目录'; }
-    dom.statSelected.textContent = '选中: ' + label;
+    else if (state.selectedFolderId) { const n = DB.getNode(state.selectedFolderId); label = n ? n.name : t('根目录'); }
+    dom.statSelected.textContent = t('选中') + ': ' + label;
   }
   if (dom.objectChip && !state.selectedModelId) dom.objectChip.classList.add('hidden');
 }
@@ -1234,11 +1238,11 @@ function updateExportButtonLabel() {
   const sub = $('dd-html-sub');
   if (!label) return;
   if (state.selectedModelId) {
-    label.textContent = '导出为查看器';
-    if (sub) sub.textContent = '选中的单个模型 → 独立 3D 查看器';
+    label.textContent = t('导出为查看器');
+    if (sub) sub.textContent = t('选中的单个模型 → 独立 3D 查看器');
   } else {
-    label.textContent = '导出为查看器';
-    if (sub) sub.textContent = '当前目录 → 独立 HTML 查看器';
+    label.textContent = t('导出为查看器');
+    if (sub) sub.textContent = t('当前目录 → 独立 HTML 查看器');
   }
 }
 
@@ -1384,7 +1388,7 @@ async function handleDelete(id) {
   let extra = '';
   if (isFolder && childCount > 0) {
     extra = `<div style="margin-top:10px;padding:10px;background:rgba(255,85,102,0.1);border:1px solid var(--danger);border-radius:6px;font-size:12px;color:var(--danger)">
-       此文件夹包含 ${childCount} 个子项，将一并删除（无法撤销）
+       ${t('此文件夹包含 {n} 个子项，将一并删除（无法撤销）', { n: childCount })}
     </div>`;
   }
   const confirmed = await showConfirm(
@@ -1592,7 +1596,7 @@ async function handleExport() {
   } catch (e) {
     toast('导出失败：' + e.message, 'error');
   } finally {
-    dom.statStatus.textContent = '● 就绪';
+    dom.statStatus.textContent = '● ' + t('就绪');
     dom.statStatus.className = 'item ok';
   }
 }
@@ -1607,7 +1611,7 @@ async function handleExportBundleZip() {
     console.error(e);
     toast('导出失败：' + e.message, 'error');
   } finally {
-    dom.statStatus.textContent = '● 就绪';
+    dom.statStatus.textContent = '● ' + t('就绪');
     dom.statStatus.className = 'item ok';
   }
 }
@@ -1682,7 +1686,7 @@ async function handleImport() {
     } catch (err) {
       toast('导入失败：' + err.message, 'error');
     } finally {
-      dom.statStatus.textContent = '● 就绪';
+      dom.statStatus.textContent = '● ' + t('就绪');
       dom.statStatus.className = 'item ok';
     }
   };
@@ -1715,7 +1719,7 @@ async function importAsNewProject(file) {
     console.error(err);
     toast('导入失败：' + (err?.message || err), 'error');
   } finally {
-    dom.statStatus.textContent = '● 就绪';
+    dom.statStatus.textContent = '● ' + t('就绪');
     dom.statStatus.className = 'item ok';
   }
 }
@@ -1726,7 +1730,7 @@ async function loadModelIntoViewer(id) {
   const node = DB.getNode(id);
   if (!node || node.type !== 'model') return;
   dom.viewerEmpty.classList.add('hidden');
-  dom.ovInfo.textContent = `加载中: ${node.name}`;
+  dom.ovInfo.textContent = t('加载中') + ': ' + node.name;
   applyNodeBg(id);
   try {
     const blob = await DB.blobGet(node.blobId);
@@ -1740,12 +1744,12 @@ async function loadModelIntoViewer(id) {
     viewer.setChains(DB.getChains(id) || []);   // 把交互链推给 3D 预览，链门禁才能在编辑器内生效（方便预览解谜顺序）
     viewer.setSounds(await DB.getAllSoundData());
     const nodeName = node.name;
-    dom.ovInfo.textContent = `${nodeName} · 拖拽旋转 · 滚轮缩放 · 右键/中键平移`;
+    dom.ovInfo.textContent = nodeName + ' · ' + t('拖拽旋转') + ' · ' + t('滚轮缩放') + ' · ' + t('右键/中键平移');
     if (dom.objectChip) {
       dom.objectChip.innerHTML = '<span class="dot"></span>' + escapeHtml(nodeName);
       dom.objectChip.classList.remove('hidden');
     }
-    dom.ovStats.textContent = `尺寸: ${stats.size.x.toFixed(2)} × ${stats.size.y.toFixed(2)} × ${stats.size.z.toFixed(2)} | 顶点: ${formatNumber(stats.vertices)} | 三角面: ${formatNumber(Math.round(stats.triangles))}`;
+    dom.ovStats.textContent = t('尺寸') + ': ' + stats.size.x.toFixed(2) + ' × ' + stats.size.y.toFixed(2) + ' × ' + stats.size.z.toFixed(2) + ' | ' + t('顶点') + ': ' + formatNumber(stats.vertices) + ' | ' + t('三角面') + ': ' + formatNumber(Math.round(stats.triangles));
 
     renderProps();
   } catch (e) {
@@ -1813,30 +1817,30 @@ async function showBgModal(nodeId) {
   var gradDisplay = isSolid ? 'display:none' : '';
 
   var html = '<div class="bg-modal-body">'
-    + '<div class="bg-modal-hint">为 <b>' + escapeHtml(nodeName) + '</b> 设置背景色</div>'
+    + '<div class="bg-modal-hint">' + t('为 {name} 设置背景色', { name: '<b>' + escapeHtml(nodeName) + '</b>' }) + '</div>'
     + '<div class="bg-mode-toggle">'
-    + '<label class="bg-mode-label"><input type="radio" name="bg-mode" value="solid" ' + solidChecked + '> 纯色</label>'
-    + '<label class="bg-mode-label"><input type="radio" name="bg-mode" value="gradient" ' + gradChecked + '> 渐变</label>'
+    + '<label class="bg-mode-label"><input type="radio" name="bg-mode" value="solid" ' + solidChecked + '> ' + t('纯色') + '</label>'
+    + '<label class="bg-mode-label"><input type="radio" name="bg-mode" value="gradient" ' + gradChecked + '> ' + t('渐变') + '</label>'
     + '</div>'
-    + '<div class="bg-row" id="bgm-solid" style="' + solidDisplay + '"><label>颜色</label><input type="color" id="bgm-c1" value="' + c1 + '"></div>'
+    + '<div class="bg-row" id="bgm-solid" style="' + solidDisplay + '"><label>' + t('颜色') + '</label><input type="color" id="bgm-c1" value="' + c1 + '"></div>'
     + '<div class="bg-row" id="bgm-gradient" style="' + gradDisplay + 'flex-direction:column;align-items:stretch;gap:6px">'
-    + '<div><label>起始色</label><input type="color" id="bgm-gc1" value="' + c1 + '"></div>'
-    + '<div><label>结束色</label><input type="color" id="bgm-gc2" value="' + c2 + '"></div>'
-    + '<div><label>方向</label><select id="bgm-gdir"><option value="vertical"' + (dir === 'vertical' ? ' selected' : '') + '>上下</option><option value="horizontal"' + (dir === 'horizontal' ? ' selected' : '') + '>左右</option><option value="diagonal"' + (dir === 'diagonal' ? ' selected' : '') + '>对角</option><option value="radial"' + (dir === 'radial' ? ' selected' : '') + '>径向</option></select></div>'
+    + '<div><label>' + t('起始色') + '</label><input type="color" id="bgm-gc1" value="' + c1 + '"></div>'
+    + '<div><label>' + t('结束色') + '</label><input type="color" id="bgm-gc2" value="' + c2 + '"></div>'
+    + '<div><label>' + t('方向') + '</label><select id="bgm-gdir"><option value="vertical"' + (dir === 'vertical' ? ' selected' : '') + '>' + t('上下') + '</option><option value="horizontal"' + (dir === 'horizontal' ? ' selected' : '') + '>' + t('左右') + '</option><option value="diagonal"' + (dir === 'diagonal' ? ' selected' : '') + '>' + t('对角') + '</option><option value="radial"' + (dir === 'radial' ? ' selected' : '') + '>' + t('径向') + '</option></select></div>'
     + '</div>'
-    + '<div class="bg-presets"><span class="bg-presets-label">预设</span><div class="bg-preset-list" id="bgm-presets">' + presetHtml + '</div></div>'
+    + '<div class="bg-presets"><span class="bg-presets-label">' + t('预设') + '</span><div class="bg-preset-list" id="bgm-presets">' + presetHtml + '</div></div>'
     + '<div style="display:flex;gap:8px;margin-top:10px">'
-    + '<button class="btn" id="bgm-reset" style="flex:1">恢复继承颜色</button>'
+    + '<button class="btn" id="bgm-reset" style="flex:1">' + t('恢复继承颜色') + '</button>'
     + '</div>'
     + '</div>';
 
   dom.modal.classList.add('open');
-  dom.modalTitle.textContent = '背景色设置';
+  dom.modalTitle.textContent = t('背景色设置');
   dom.modalLabel.textContent = '';
   dom.modalInput.style.display = 'none';
   dom.modalExtra.innerHTML = html;
-  $('modal-ok').textContent = '保存';
-  $('modal-cancel').textContent = '取消';
+  $('modal-ok').textContent = t('保存');
+  $('modal-cancel').textContent = t('取消');
 
   var applyPreview = function(settings) {
     viewer.setBackground(settings.type, settings.color1, settings.color2, settings.direction);
@@ -1965,6 +1969,22 @@ function bindDragDrop() {
   });
 }
 
+// ============ 语言切换（🌏 按钮） ============
+// 同步按钮文案（中文 / EN），并随 langchange 重渲染整树
+function updateLangLabel() {
+  const en = window.getLang() === 'en';
+  if (dom.langLabel) dom.langLabel.textContent = en ? 'EN' : '中文';
+}
+
+// langchange 事件：翻译静态文本 + 重渲染所有动态内容
+function onLangChange() {
+  updateLangLabel();
+  window.applyStatic(document);
+  renderAll();
+  renderChains();
+  renderProjectsScreen();
+}
+
 // ============ 事件绑定 ============
 let ctxTarget = null;  // 右键菜单当前选中的树节点 {id, type}
 
@@ -2030,7 +2050,7 @@ function bindEvents() {
           console.error(err);
           toast('导出失败：' + (err.message || err), 'error');
         } finally {
-          dom.statStatus.textContent = '● 就绪'; dom.statStatus.className = 'item ok';
+          dom.statStatus.textContent = '● ' + t('就绪'); dom.statStatus.className = 'item ok';
         }
       }
     });
@@ -2039,6 +2059,9 @@ function bindEvents() {
   // 项目：返回项目列表 / 新建项目
   $('btn-projects')?.addEventListener('click', returnToProjects);
   $('btn-new-project')?.addEventListener('click', handleNewProject);
+
+  // 语言切换（🌏）：点击在中文 / English 间切换
+  if (dom.btnLang) dom.btnLang.addEventListener('click', () => window.toggleLang());
 
   // 项目页：拖入项目文件（.json）→ 新建项目并打开
   const pScreen = document.getElementById('projects-screen');
@@ -2202,16 +2225,16 @@ async function duplicateNode(id) {
 
 // ============ 命令面板 (Ctrl/Cmd+K) ============
 const CMD_COMMANDS = [
-  { label: '新建文件夹', hint: 'Ctrl+N', run: () => handleNewFolder() },
-  { label: '上传 GLB', hint: 'Ctrl+U', run: () => dom.fileInput.click() },
-  { label: '导出为查看器', hint: '', run: () => $('btn-export')?.click() },
-  { label: '导出 3D 物体包 (.jgl)', hint: '', run: () => handleExportBundleZip() },
-  { label: '重置视角', hint: '', run: () => viewer && viewer.resetCamera() },
-  { label: '切换自动旋转', hint: '', run: () => $('btn-rotate')?.click() },
-  { label: '设为默认视角', hint: '', run: () => $('btn-set-default-view')?.click() },
-  { label: '切换属性面板', hint: 'Ctrl+\\', run: () => dom.btnTogglePanel?.click() },
-  { label: '返回项目列表', hint: '', run: () => returnToProjects() },
-  { label: '新建项目', hint: '', run: () => handleNewProject() },
+  { label: t('新建文件夹'), hint: 'Ctrl+N', run: () => handleNewFolder() },
+  { label: t('上传 GLB'), hint: 'Ctrl+U', run: () => dom.fileInput.click() },
+  { label: t('导出为查看器'), hint: '', run: () => $('btn-export')?.click() },
+  { label: t('导出 3D 物体包 (.jgl)'), hint: '', run: () => handleExportBundleZip() },
+  { label: t('重置视角'), hint: '', run: () => viewer && viewer.resetCamera() },
+  { label: t('切换自动旋转'), hint: '', run: () => $('btn-rotate')?.click() },
+  { label: t('设为默认视角'), hint: '', run: () => $('btn-set-default-view')?.click() },
+  { label: t('切换属性面板'), hint: 'Ctrl+\\', run: () => dom.btnTogglePanel?.click() },
+  { label: t('返回项目列表'), hint: '', run: () => returnToProjects() },
+  { label: t('新建项目'), hint: '', run: () => handleNewProject() },
 ];
 let cmdSel = 0;
 function openCmdPalette() {
@@ -2225,7 +2248,7 @@ function renderCmdResults(q) {
   const list = $('cmd-results'); if (!list) return;
   q = (q || '').trim().toLowerCase();
   const items = CMD_COMMANDS.filter(c => !q || c.label.toLowerCase().includes(q) || (c.hint || '').toLowerCase().includes(q));
-  if (items.length === 0) { list.innerHTML = '<div class="cmd-empty">无匹配命令</div>'; list._items = []; return; }
+  if (items.length === 0) { list.innerHTML = '<div class="cmd-empty">' + t('无匹配命令') + '</div>'; list._items = []; return; }
   if (cmdSel >= items.length) cmdSel = items.length - 1;
   if (cmdSel < 0) cmdSel = 0;
   list.innerHTML = items.map((c, i) =>
@@ -2321,10 +2344,10 @@ function bindFileMenu() {
     main.classList.toggle('is-narrow', narrow);
     if (narrow) {
       main.classList.remove('panel-hidden');
-      if (dom.togglePanelLabel) dom.togglePanelLabel.textContent = '打开属性';
+      if (dom.togglePanelLabel) dom.togglePanelLabel.textContent = t('打开属性');
     } else {
       main.classList.remove('panel-open');
-      if (dom.togglePanelLabel) dom.togglePanelLabel.textContent = '隐藏面板';
+      if (dom.togglePanelLabel) dom.togglePanelLabel.textContent = t('隐藏面板');
     }
   }
   window.addEventListener('resize', refresh);
@@ -2335,11 +2358,11 @@ function bindFileMenu() {
       if (isNarrow()) {
         const willOpen = !main.classList.contains('panel-open');
         main.classList.toggle('panel-open', willOpen);
-        if (dom.togglePanelLabel) dom.togglePanelLabel.textContent = willOpen ? '收起属性' : '打开属性';
+        if (dom.togglePanelLabel) dom.togglePanelLabel.textContent = willOpen ? t('收起属性') : t('打开属性');
       } else {
         const willHide = !main.classList.contains('panel-hidden');
         main.classList.toggle('panel-hidden', willHide);
-        if (dom.togglePanelLabel) dom.togglePanelLabel.textContent = willHide ? '显示面板' : '隐藏面板';
+        if (dom.togglePanelLabel) dom.togglePanelLabel.textContent = willHide ? t('显示面板') : t('隐藏面板');
       }
     });
   }
@@ -2367,7 +2390,7 @@ async function ensureViewer() {
     const newState = !viewer.controls.autoRotate;
     viewer.setAutoRotate(newState);
     const label = e.currentTarget.querySelector('.label');
-    if (label) label.textContent = newState ? '停止旋转' : '切换自动旋转';
+    if (label) label.textContent = newState ? t('停止旋转') : t('切换自动旋转');
     toast(newState ? '已开始自动旋转' : '已停止自动旋转');
   });
   $('btn-set-default-view')?.addEventListener('click', () => {
@@ -2436,12 +2459,12 @@ async function renderProjectsScreen() {
     const date = p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '';
     return `<div class="project-card" data-pid="${escapeHtml(p.id)}">
       <div class="project-card-name">${escapeHtml(p.name)}</div>
-      <div class="project-card-meta">模型 ${st.models} · 文件夹 ${st.folders}${date ? ' · ' + date : ''}</div>
+      <div class="project-card-meta">${t('模型')} ${st.models} · ${t('文件夹')} ${st.folders}${date ? ' · ' + date : ''}</div>
       <div class="project-card-actions">
-        <button class="btn primary btn-open" data-pid="${escapeHtml(p.id)}">打开</button>
-        <button class="btn btn-clone" data-pid="${escapeHtml(p.id)}">复制</button>
-        <button class="btn btn-rename" data-pid="${escapeHtml(p.id)}">重命名</button>
-        <button class="btn btn-del" data-pid="${escapeHtml(p.id)}">删除</button>
+        <button class="btn primary btn-open" data-pid="${escapeHtml(p.id)}">${t('打开')}</button>
+        <button class="btn btn-clone" data-pid="${escapeHtml(p.id)}">${t('复制')}</button>
+        <button class="btn btn-rename" data-pid="${escapeHtml(p.id)}">${t('重命名')}</button>
+        <button class="btn btn-del" data-pid="${escapeHtml(p.id)}">${t('删除')}</button>
       </div>
     </div>`;
   }).join('');
@@ -2504,11 +2527,18 @@ DB.migrateLegacyIfNeeded()
       const preview = v ? v.substring(0, 100) : '(null)';
       console.log('  ', k, '=', preview, '...');
     }
+    // 语言：按持久化设置同步初始文案，并注册切换监听
+    updateLangLabel();
+    window.applyStatic(document);
+    window.addEventListener('langchange', onLangChange);
     bindEvents();
     renderProjectsScreen();
   })
   .catch((err) => {
     console.error('启动失败', err);
+    updateLangLabel();
+    window.applyStatic(document);
+    window.addEventListener('langchange', onLangChange);
     bindEvents();
     renderProjectsScreen();
   });
@@ -2517,6 +2547,6 @@ DB.migrateLegacyIfNeeded()
 setTimeout(function() {
   if (!window._threeReady) {
     var el = document.getElementById('viewer-overlay');
-    if (el) el.innerHTML = '<div class="overlay-card" style="color:#ff5d6c">Three.js 加载失败，请检查网络连接</div>';
+    if (el) el.innerHTML = '<div class="overlay-card" style="color:#ff5d6c">' + t('Three.js 加载失败，请检查网络连接') + '</div>';
   }
 }, 10000);

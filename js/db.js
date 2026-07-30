@@ -340,7 +340,7 @@ function deleteProject(id) {
 // 复制项目：生成全新注册表条目，深拷贝树、音效元数据、IndexedDB 命名空间前缀下的 blob/sound。
 // 复制后副本与原件完全独立——物理键带新项目前缀，后续任一方增删改都不影响另一方。
 async function cloneProject(srcId, newName) {
-  if (!srcId) throw new Error('源项目不存在');
+  if (!srcId) throw new Error(window.t('源项目不存在'));
   const id = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
   const srcName = getProjectName(srcId) || '未命名项目';
   const name = uniqueProjectName(newName || (srcName + ' 副本'));
@@ -736,7 +736,7 @@ function countFolders() {
 // 与 importProject 完全对应：blobs 键为裸 id，导入时由 blobPut 重新命名空间化。
 // 返回 { version, schema, projectName, exportedAt, tree, blobs, sounds }
 async function exportProjectById(id) {
-  if (!id) throw new Error('缺少项目 id');
+  if (!id) throw new Error(window.t('缺少项目 id'));
   // 1) 该项目的树（直接从 localStorage 读取，不依赖全局 _tree / _projectId）
   let tree = null;
   try {
@@ -786,13 +786,13 @@ async function exportProjectById(id) {
 
 // 导出当前项目（编辑器内「导出」按钮调用）
 async function exportProject() {
-  if (!_projectId) throw new Error('未选择项目');
+  if (!_projectId) throw new Error(window.t('未选择项目'));
   return exportProjectById(_projectId);
 }
 
 // 导入项目（合并模式：保留现有，添加新条目，id 冲突则跳过）
 async function importProject(data) {
-  if (!data?.tree) throw new Error('数据格式错误');
+  if (!data?.tree) throw new Error(window.t('数据格式错误'));
   let addedModels = 0, addedFolders = 0, skipped = 0;
   // 合并树（避免 id 冲突，重命名后插入）
   const idMap = {};
