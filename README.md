@@ -4,7 +4,7 @@
 
 ## ▶ 在线使用 / Use online
 **想直接上手？点这里打开网页版（纯前端，无需安装，数据存在你的浏览器本地）：**
-👉 **https://jigugumiao.github.io/jiji_glb_mutually_Creator/**
+👉 **https://jigugumiao.github.io/jiji_glb_play_creator/**
 
 > ⚠️ 本项目是 **[jigugumiao/jiji_text_game_editor（剧情编辑器）](https://github.com/jigugumiao/jiji_text_game_editor)** 的配套素材工具。它的 **`.jgl` 工程包导出**专门供剧情编辑器导入为 3D 物品使用；而「独立查看器 HTML / 目录画廊 HTML」两种导出是自包含网页，可单独分享、**不依赖**剧情编辑器。
 

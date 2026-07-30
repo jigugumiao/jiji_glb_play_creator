@@ -4,7 +4,7 @@
 
 ## ▶ Use online
 **Want to start right away? Open the web app here (pure front-end, no install; your data is saved in your browser's local storage):**
-👉 **https://jigugumiao.github.io/jiji_glb_mutually_Creator/**
+👉 **https://jigugumiao.github.io/jiji_glb_play_creator/**
 
 > ⚠️ This project is a companion asset tool for **[jigugumiao/jiji_text_game_editor (Story Editor)](https://github.com/jigugumiao/jiji_text_game_editor)**. Its **`.jgl` bundle export** is specifically designed to be imported by the Story Editor as a 3D item. The other two exports — **standalone viewer HTML / directory gallery HTML** — are self-contained web pages you can share on their own and do **not** depend on the Story Editor.
 
