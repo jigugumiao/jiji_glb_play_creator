@@ -777,14 +777,23 @@ class GLBViewer {
   //   都不勾          ：每次点击从头播放一次；播放中再次点击会被忽略（避免位置错位），播完停在末尾，可再次点击重播
   _toggleAction(action, pingpong, autoReturn, range) {
     const st = this._actionState[action.uuid] || 'idle';
+    // 关键：AnimationAction.reset() 会把 clampWhenFinished 一并重置为 false，
+    // 导致 LoopOnce 正向播完后 action 被停用、网格弹回 bind（初始）姿态，
+    // 看起来像「播完跳回开始」。每次播放前显式设回 true，让播完停在结尾帧。
+    const armForward = () => {
+      action.reset();
+      action.clampWhenFinished = true;
+      action.time = range ? range.in : 0;
+      action.setLoop(THREE.LoopOnce, 1);
+      action.timeScale = 1;
+      action.enabled = true;
+      action.paused = false;
+      action.play();
+    };
     if (autoReturn) {
       // 连续来回：仅在 idle（不在播放中）时响应，播放中忽略
       if (st === 'idle') {
-        action.reset();
-        action.time = range ? range.in : 0;
-        action.setLoop(THREE.LoopOnce, 1);
-        action.timeScale = 1;
-        action.play();
+        armForward();
         this._actionState[action.uuid] = 'auto-fwd';
       }
       return;
@@ -792,16 +801,17 @@ class GLBViewer {
     if (pingpong) {
       // 离散来回：正向 ↔ 倒放 交替，需两次点击完成一个来回
       if (st === 'idle' || st === 'ping-reverse') {
-        action.reset();
-        action.time = range ? range.in : 0;
-        action.setLoop(THREE.LoopOnce, 1);
-        action.timeScale = 1;
-        action.play();
+        armForward();
         this._actionState[action.uuid] = 'ping-forward';
       } else if (st === 'ping-forward') {
+        // 反向起点尊重 clipOut 区间（缺省为整段结尾）
+        const endT = (range && range.out != null) ? range.out : action.getClip().duration;
         action.stop();
-        action.time = action.getClip().duration;
+        action.clampWhenFinished = true;
+        action.time = endT;
         action.timeScale = -1;
+        action.enabled = true;
+        action.paused = false;
         action.play();
         this._actionState[action.uuid] = 'ping-reverse';
       }
@@ -809,11 +819,7 @@ class GLBViewer {
     }
     // 普通：每次点击从头播放一次；播放中（st==='forward'）忽略再次点击，避免位置错位
     if (st === 'idle') {
-      action.reset();
-      action.time = range ? range.in : 0;
-      action.setLoop(THREE.LoopOnce, 1);
-      action.timeScale = 1;
-      action.play();
+      armForward();
       this._actionState[action.uuid] = 'forward';
     }
   }
