@@ -12,7 +12,6 @@ const state = {
   expandedFolders: new Set(),  // 树中展开的文件夹
   activeTab: 'props',          // 'props'（模型/文件夹属性，互斥） | 'sounds'
   currentProjectId: null,
-  activeInteractMesh: null,    // 时间轴当前正在编辑的 mesh 交互（调起止即写进该 mesh 交互）
   treeFilter: '',               // 资源树过滤关键词（空 = 不过滤）      // 当前打开的项目 id（用于面包屑根节点）
 };
 
@@ -442,7 +441,6 @@ async function renderModelInfo() {
       html += `
     <div class="panel-section">
       <h4>点击交互配置</h4>
-      <div class="hint" style="font-size:11px;margin-bottom:8px;color:#8b93a3">点击模型上的部位，触发此处绑定的动画与音效（音效每次点击都会播放）。下面每个选项含义：<br>· <b>点击时响应</b>：取消后点击该物体无任何反应；<br>· <b>来回播放</b>：点一下正向播放，再点一下倒放回开头（需要两次点击）；<br>· <b>动画自动归位</b>：点一下即自动完整来回一次（正向播完自动倒放回开头，连续无需再次点击）；<br>· <b>动画结束后删除该物体</b>：动画（来回）播放完毕后，该物体从场景中消失，不可再点击。<br>音效在左侧「音效库」标签里导入与管理。</div>
       <div class="hint" style="font-size:11px;margin-bottom:8px;color:#8b93a3">点击模型上的部位，触发此处绑定的动画与音效（音效每次点击都会播放）。下面每个选项含义：<br>· <b>点击时响应</b>：取消后点击该物体无任何反应；<br>· <b>来回播放</b>：点一下正向播放，再点一下倒放回开头（需要两次点击）；<br>· <b>动画自动归位</b>：点一下即自动完整来回一次（正向播完自动倒放回开头，连续无需再次点击）；<br>· <b>动画结束后删除该物体</b>：动画（来回）播放完毕后，该物体从场景中消失，不可再点击；<br>· <b>设为结束物体</b>：在联动剧情工具里召唤该 3D 界面后，点击此物体即结束 3D 界面、继续剧情（可设置多个）。<br>音效在左侧「音效库」标签里导入与管理。</div>
       <div id="interact-list"></div>
     </div>`;
@@ -525,7 +523,7 @@ async function renderModelInfo() {
     for (const k in cur) {
       const v = cur[k];
       if (typeof v === 'string') {
-        norm[k] = { clip: v, sound: '', respond: true, pingpong: false, autoReturn: false, deleteAfter: false, exit: false, clipIn: 0, clipOut: null };
+        norm[k] = { clip: v, sound: '', respond: true, pingpong: false, autoReturn: false, deleteAfter: false, exit: false, clipIn: 0, clipOut: null, once: true };
       } else {
         norm[k] = {
           clip: v.clip || '',
@@ -536,7 +534,8 @@ async function renderModelInfo() {
           deleteAfter: !!v.deleteAfter,     // 默认动画后不删除
           exit: !!v.exit,                    // 默认不是结束物体
           clipIn: v.clipIn != null ? v.clipIn : 0,       // 动画起（秒）
-          clipOut: v.clipOut != null ? v.clipOut : null  // 动画止（秒，null=整段）
+          clipOut: v.clipOut != null ? v.clipOut : null,  // 动画止（秒，null=整段）
+          once: v.once !== false            // 默认只响应一次点击（防解谜动画被反向播放）
         };
       }
     }
@@ -544,7 +543,7 @@ async function renderModelInfo() {
       listEl.innerHTML = '<div class="hint" style="font-size:11px;color:#8b93a3">该模型没有可识别的部位网格。</div>';
     } else {
       listEl.innerHTML = meshes.map(m => {
-        const e = norm[m.name] || { clip: '', sound: '', respond: true, pingpong: false, autoReturn: false, deleteAfter: false, exit: false, clipIn: 0, clipOut: null };
+        const e = norm[m.name] || { clip: '', sound: '', respond: true, pingpong: false, autoReturn: false, deleteAfter: false, exit: false, clipIn: 0, clipOut: null, once: true };
         const clipOpts = clips.map(c =>
           `<option value="${escapeHtml(c)}" ${e.clip === c ? 'selected' : ''}>${escapeHtml(c)}</option>`
         ).join('')
@@ -557,6 +556,12 @@ async function renderModelInfo() {
         const loopVal = e.autoReturn ? 'autoreturn' : (e.pingpong ? 'pingpong' : 'none');
         const delChk = e.deleteAfter ? 'checked' : '';
         const exitChk = e.exit ? 'checked' : '';
+        // 所属交互链下拉（与底部交互链面板共享同一份链数据）
+        const curChain = chainIdOfMesh(m.name);
+        const chainOpts = ['<option value="">— 不属于任何链（可任意触发）—</option>']
+          .concat(getModelChains().map(ch => `<option value="${escapeHtml(ch.id)}" ${ch.id === curChain ? 'selected' : ''}>${escapeHtml(ch.name)}</option>`))
+          .join('');
+        const multiChk = (e.once === false) ? 'checked' : '';
         return `
         <div class="interact-block collapsed${respondChk ? '' : ' respond-off'}" data-mesh="${escapeHtml(m.name)}">
           <div class="interact-trigger-head">
@@ -599,6 +604,16 @@ async function renderModelInfo() {
               <input type="checkbox" class="interact-exit" data-mesh="${escapeHtml(m.name)}" ${exitChk}><span class="exit-label">点击该触发部位结束 3D 界面、继续剧情</span>
             </label>
           </div>
+          <div class="interact-section kind-chain">
+            <div class="interact-section-title">交互链与触发限制</div>
+            <div class="interact-row">
+              <span class="interact-row-label">所属交互链</span>
+              <select class="interact-chain" data-mesh="${escapeHtml(m.name)}">${chainOpts}</select>
+            </div>
+            <label class="interact-flag" title="默认每个部位只响应一次点击（防止解谜动画被反向播放，如盒子打开后别关上）。勾选后允许重复点击。">
+              <input type="checkbox" class="interact-multi" data-mesh="${escapeHtml(m.name)}" ${multiChk}><span>允许多次点击</span>
+            </label>
+          </div>
         </div>`;
       }).join('');
 
@@ -611,6 +626,7 @@ async function renderModelInfo() {
           const loopSel = listEl.querySelector('.interact-loop[data-mesh="' + CSS.escape(m.name) + '"]');
           const delSel = listEl.querySelector('.interact-deleteafter[data-mesh="' + CSS.escape(m.name) + '"]');
           const exitSel = listEl.querySelector('.interact-exit[data-mesh="' + CSS.escape(m.name) + '"]');
+          const multiSel = listEl.querySelector('.interact-multi[data-mesh="' + CSS.escape(m.name) + '"]');
           const clip = clipSel ? clipSel.value : '';
           const sound = soundSel ? soundSel.value : '';
           const respond = respondSel ? respondSel.checked : true;
@@ -619,19 +635,24 @@ async function renderModelInfo() {
           const autoReturn = loop === 'autoreturn';
           const deleteAfter = delSel ? delSel.checked : false;
           const exit = exitSel ? exitSel.checked : false;
+          const once = multiSel ? !multiSel.checked : true;  // 勾选「允许多次点击」→ once=false
           // 起止区间：来自时间轴（写入 DB 后由 norm 反映），保证拖时间轴设的段落不被覆盖
           const cur = norm[m.name] || {};
           const clipIn = cur.clipIn || 0;
           const clipOut = (cur.clipOut != null) ? cur.clipOut : null;
-          map[m.name] = { clip, sound, respond, pingpong, autoReturn, deleteAfter, exit, clipIn, clipOut };
+          map[m.name] = { clip, sound, respond, pingpong, autoReturn, deleteAfter, exit, clipIn, clipOut, once };
         });
         DB.setInteractions(id, map);
         viewer.setInteractions(map);
         markSaved();
         toast('已保存点击交互配置');
       };
-      listEl.querySelectorAll('.interact-clip, .interact-sound, .interact-loop, .interact-deleteafter, .interact-exit').forEach(sel => {
+      listEl.querySelectorAll('.interact-clip, .interact-sound, .interact-loop, .interact-deleteafter, .interact-exit, .interact-multi').forEach(sel => {
         sel.addEventListener('change', saveInteraction);
+      });
+      // 所属交互链下拉：切换到某条链 / 选「不属于任何链」→ 更新链成员关系（不影响交互落库）
+      listEl.querySelectorAll('.interact-chain').forEach(sel => {
+        sel.addEventListener('change', () => assignMeshToChain(sel.dataset.mesh, sel.value || null));
       });
       // 主开关「点击该部位时触发以下效果」：关闭时把下方「触发后播放 / 触发后效果」分组变暗，提示这些效果当前不触发
       listEl.querySelectorAll('.interact-respond').forEach(sel => {
@@ -642,7 +663,7 @@ async function renderModelInfo() {
         });
       });
       // 触发器头部点击：折叠 / 展开 该部位配置（默认折叠，降低信息密度）
-      // 同时反向联动：在 3D 视口里高亮该部位，并设为时间轴当前编辑对象
+      // 折叠 / 展开该部位配置（默认折叠，降低信息密度）；点击头部同时在 3D 视口里高亮该部位
       listEl.querySelectorAll('.interact-trigger-head').forEach(h => {
         h.addEventListener('click', () => {
           const block = h.closest('.interact-block');
@@ -650,20 +671,12 @@ async function renderModelInfo() {
             block.classList.toggle('collapsed');
             const meshName = block.dataset.mesh;
             if (meshName && viewer && viewer.highlightMesh) viewer.highlightMesh(meshName);
-            setActiveInteractMesh(meshName);
           }
         });
       });
-      // 切换某部位的动画下拉 → 设为时间轴当前编辑对象并同步预览片段
-      listEl.querySelectorAll('.interact-clip').forEach(sel => {
-        sel.addEventListener('change', () => {
-          const mesh = sel.dataset.mesh;
-          if (mesh) setActiveInteractMesh(mesh);
-        });
-      });
     }
-    // 时间轴（嵌入 GLB 片段查看器）：随交互面板一起渲染
-    renderTimeline();
+    // 交互链面板（解谜顺序）：随交互面板一起渲染
+    renderChains();
   }
 }
 
@@ -878,225 +891,216 @@ function highlightMeshInList(meshName) {
 // 时间轴与「当前正在编辑的 mesh 交互」绑定：拖动起止 = 写进该 mesh 交互的 clipIn/clipOut；
 // 在 3D 界面里点击该部位即播放指定段落。时间轴本身只做预览（手动推进 action.time）。
 
-let _tlDrag = null;   // 拖动状态：{ type:'scrub'|'in'|'out', lane, rect, dur }
+// ============ 交互链（解谜顺序） ============
+// 交互链 = 交互物品的前后顺序；同一条链上，只有「前一个部位被点击过」，后一个部位才允许触发。
+// 未加入任何链的部位可任意触发。导出成品（独立查看器 / 画廊 / 剧情编辑器）也按此门禁执行。
 
-// 设置时间轴当前编辑对象为某个 mesh（来自点击交互块头部 / 3D 视口点击 / 下拉切换）
-// opts.skipGrab=true 时（3D 视口点击，可能正触发交互动画）只刷新显示、不抢占正在播放的 action
-function setActiveInteractMesh(meshName, opts) {
-  if (!meshName) return;
-  const meshes = viewer.getMeshList();
-  if (!meshes.some(m => m.name === meshName)) return;
-  state.activeInteractMesh = meshName;
-  const listEl = $('interact-list');
-  if (listEl) {
-    listEl.querySelectorAll('.interact-block.active').forEach(r => r.classList.remove('active'));
-    const block = listEl.querySelector('.interact-block[data-mesh="' + CSS.escape(meshName) + '"]');
-    if (block) block.classList.add('active');
-  }
-  if (opts && opts.skipGrab) syncTimelineSelection();
-  else syncTimelineFromActive();
-}
-
-// 计算当前激活 mesh 在时间轴上的视图数据（clip / in / out / duration）
-function tlComputeView() {
+// 读取当前模型的链
+function getModelChains() {
   const id = state.selectedModelId;
-  const map = DB.getInteractions(id) || {};
-  const e = map[state.activeInteractMesh] || {};
-  const clips = viewer.getClipList();
-  // 预览片段：优先用该 mesh 已绑定的 GLB 片段；未绑定则取第一个片段做预览（不影响交互落库）
-  const clipName = (e.clip && e.clip.indexOf('preset:') !== 0) ? e.clip : (clips[0] || '');
-  const info = viewer.getClipInfo().find(c => c.name === clipName);
-  const dur = info ? info.duration : 0;
-  const inT = (e.clipIn != null) ? e.clipIn : 0;
-  const outT = (e.clipOut != null) ? e.clipOut : dur;
-  return { clipName, inTime: inT, outTime: outT, duration: dur, time: inT, playing: false };
+  if (!id) return [];
+  return DB.getChains(id) || [];
 }
 
-// 把「当前激活 mesh 交互」的 clip / in / out 同步到 viewer 时间轴预览（会抢占 action）
-function syncTimelineFromActive() {
-  const dock = $('timeline-dock');
-  if (!dock || dock.hasAttribute('hidden')) return;
+// 给定 mesh 当前所在链 id（不在任何链则返回 null）
+function chainIdOfMesh(meshName) {
+  const chains = getModelChains();
+  for (const ch of chains) if (ch.order.indexOf(meshName) >= 0) return ch.id;
+  return null;
+}
+
+// 把某 mesh 分配到某条链（chainId 为 null 表示移出所有链）
+function assignMeshToChain(meshName, chainId) {
   const id = state.selectedModelId;
-  if (!id || !viewer.hasAnimations()) return;
-  const v = tlComputeView();
-  // 若 3D 点击触发的交互动画正在播放，不要抢占该 action，仅刷新显示
-  if (!viewer.isInteracting()) {
-    viewer.timelineSetClip(v.clipName);
-    viewer.timelineSetIn(v.inTime);
-    viewer.timelineSetOut(v.outTime);
-    viewer.timelinePause();
+  if (!id) return;
+  const chains = DB.getChains(id) || [];
+  chains.forEach(ch => {
+    const i = ch.order.indexOf(meshName);
+    if (i >= 0) ch.order.splice(i, 1);
+  });
+  if (chainId) {
+    const target = chains.find(ch => ch.id === chainId);
+    if (target) target.order.push(meshName);
   }
-  updateTimelineUI();
+  DB.setChains(id, chains);
+  pushChainsToViewer();
+  renderChains();
+  refreshChainDropdowns();
 }
 
-// 仅刷新时间轴显示（选中高亮 / 区间 / 文本），不抢占正在播放的交互动画
-function syncTimelineSelection() {
-  const dock = $('timeline-dock');
-  if (!dock || dock.hasAttribute('hidden')) return;
-  if (!viewer.hasAnimations()) return;
-  updateTimelineUI(tlComputeView());
+// 重排某链内成员顺序（from -> to）
+function reorderChainMember(chainId, fromIdx, toIdx) {
+  const id = state.selectedModelId;
+  if (!id) return;
+  const chains = DB.getChains(id) || [];
+  const ch = chains.find(c => c.id === chainId);
+  if (!ch) return;
+  if (fromIdx < 0 || fromIdx >= ch.order.length) return;
+  const [m] = ch.order.splice(fromIdx, 1);
+  if (toIdx < 0) toIdx = 0;
+  if (toIdx > ch.order.length) toIdx = ch.order.length;
+  ch.order.splice(toIdx, 0, m);
+  DB.setChains(id, chains);
+  pushChainsToViewer();
+  renderChains();
 }
 
-// 渲染时间轴轨道（每个嵌入片段一条 lane）；无动画则隐藏停靠条
-function renderTimeline() {
-  const dock = $('timeline-dock');
+// 删除整条链（其成员回到「无链」状态）
+function deleteChain(chainId) {
+  const id = state.selectedModelId;
+  if (!id) return;
+  let chains = DB.getChains(id) || [];
+  chains = chains.filter(c => c.id !== chainId);
+  DB.setChains(id, chains);
+  pushChainsToViewer();
+  renderChains();
+  refreshChainDropdowns();
+}
+
+// 同步链到 3D 查看器（门禁用）
+function pushChainsToViewer() {
+  if (viewer && viewer.setChains) viewer.setChains(getModelChains());
+}
+
+// 新建一条交互链
+function addChain() {
+  const id = state.selectedModelId;
+  if (!id) return;
+  const chains = DB.getChains(id) || [];
+  const n = chains.length + 1;
+  chains.push({ id: 'chain-' + Date.now() + '-' + n, name: '交互链 ' + n, order: [] });
+  DB.setChains(id, chains);
+  pushChainsToViewer();
+  renderChains();
+}
+
+// 计算拖放落点索引（行优先：y 在上半或同行 x 在左半则插在前）
+function computeDropIndex(box, x, y) {
+  const members = Array.from(box.querySelectorAll('.chain-member'));
+  for (let i = 0; i < members.length; i++) {
+    const r = members[i].getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (y < cy || (Math.abs(y - cy) <= r.height / 2 && x < cx)) return i;
+  }
+  return members.length;
+}
+
+// 渲染底部交互链面板
+function renderChains() {
+  const dock = $('chain-dock');
   if (!dock) return;
-  if (!viewer || !viewer.hasAnimations()) { dock.setAttribute('hidden', ''); return; }
-  dock.removeAttribute('hidden');
-  // 确保 active mesh 有效
   const meshes = viewer.getMeshList();
-  if (!state.activeInteractMesh || !meshes.some(m => m.name === state.activeInteractMesh)) {
-    state.activeInteractMesh = meshes.length ? meshes[0].name : null;
+  if (!meshes || meshes.length === 0) { dock.setAttribute('hidden', ''); return; }
+  dock.removeAttribute('hidden');
+  const chains = getModelChains();
+  const body = $('chain-body');
+  if (!body) return;
+  if (chains.length === 0) {
+    body.innerHTML = '<div class="chain-empty">还没有交互链。点击「+ 新建交互链」，再把右侧各部位的「所属交互链」下拉选到这条链，即可排成解谜顺序。</div>';
+    bindChainPanel();   // 空链状态也要绑定「+ 新建交互链」按钮，否则首次点击无反应
+    return;
   }
-  const clips = viewer.getClipInfo();
-  const tracks = $('tl-tracks');
-  if (tracks) {
-    tracks.innerHTML = clips.map(c => `
-      <div class="tl-lane" data-clip="${escapeHtml(c.name)}">
-        <div class="tl-lane-head" title="${escapeHtml(c.name)}"><span class="tl-name">${escapeHtml(c.name)}</span><span class="tl-dur">${c.duration.toFixed(2)}s</span></div>
-        <div class="tl-lane-lane">
-          <div class="tl-clip"></div>
-          <div class="tl-region"></div>
-          <div class="tl-handle tl-handle-in" data-h="in"></div>
-          <div class="tl-handle tl-handle-out" data-h="out"></div>
-          <div class="tl-playhead"></div>
-        </div>
+  body.innerHTML = chains.map(ch => {
+    const members = ch.order.map((name, idx) => `
+      <div class="chain-member" draggable="true" data-chain="${escapeHtml(ch.id)}" data-idx="${idx}" data-mesh="${escapeHtml(name)}" title="按住拖动调整顺序">
+        <span class="m-order">${idx + 1}</span>
+        <span class="m-name">${escapeHtml(name)}</span>
+        <button class="m-remove" data-chain="${escapeHtml(ch.id)}" data-mesh="${escapeHtml(name)}" title="移出该链">×</button>
       </div>`).join('');
-  }
-  bindTimelineOnce();
-  syncTimelineFromActive();
+    return `
+      <div class="chain-card" data-chain="${escapeHtml(ch.id)}">
+        <div class="chain-card-head">
+          <input class="chain-name-input" data-chain="${escapeHtml(ch.id)}" value="${escapeHtml(ch.name)}" title="点击重命名该交互链">
+          <span class="chain-count">${ch.order.length} 个部位</span>
+          <button class="chain-del" data-chain="${escapeHtml(ch.id)}">删除该链</button>
+        </div>
+        <div class="chain-members" data-chain="${escapeHtml(ch.id)}">
+          ${members || '<span class="chain-drop-hint">把右侧部位的下拉选到这条链即可加入</span>'}
+        </div>
+      </div>`;
+  }).join('');
+  bindChainPanel();
 }
 
-// 刷新时间轴 UI（播放头 / 选中高亮 / 区间 / 文本）；view 缺省时从 viewer 实时状态读取
-function updateTimelineUI(view) {
-  const dock = $('timeline-dock');
-  if (!dock || dock.hasAttribute('hidden')) return;
-  const st = view || viewer.timelineGetState();
-  const dur = st.duration || 0;
-  const t = st.time || 0;
-  const inn = st.inTime || 0;
-  const out = (st.outTime != null) ? st.outTime : dur;
-  const pct = (x) => (dur > 0 ? Math.min(Math.max(x / dur, 0), 1) * 100 : 0);
-  const tracks = $('tl-tracks');
-  if (tracks) {
-    tracks.querySelectorAll('.tl-lane').forEach(lane => {
-      const sel = lane.dataset.clip === st.clipName;
-      lane.classList.toggle('selected', sel);
-      const ph = lane.querySelector('.tl-playhead');
-      if (ph) { ph.style.left = pct(t) + '%'; ph.style.display = sel ? 'block' : 'none'; }
-      if (sel) {
-        const region = lane.querySelector('.tl-region');
-        const hi = lane.querySelector('.tl-handle-in');
-        const ho = lane.querySelector('.tl-handle-out');
-        if (region) { region.style.left = pct(inn) + '%'; region.style.width = (pct(out) - pct(inn)) + '%'; }
-        if (hi) hi.style.left = pct(inn) + '%';
-        if (ho) ho.style.left = pct(out) + '%';
-      }
+// 绑定交互链面板交互（每次渲染后重绑）
+function bindChainPanel() {
+  const body = $('chain-body');
+  if (!body) return;
+  const addBtn = $('chain-add');
+  if (addBtn && !addBtn._chainBound) {
+    addBtn._chainBound = true;
+    addBtn.addEventListener('click', addChain);
+  }
+  body.querySelectorAll('.chain-name-input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const id = state.selectedModelId; if (!id) return;
+      const chains = DB.getChains(id) || [];
+      const ch = chains.find(c => c.id === inp.dataset.chain);
+      if (ch) { ch.name = (inp.value || '').trim() || ch.name; DB.setChains(id, chains); pushChainsToViewer(); renderChains(); }
     });
-  }
-  const timeEl = $('tl-time'); if (timeEl) timeEl.textContent = `${t.toFixed(2)} / ${dur.toFixed(2)}s`;
-  const rangeEl = $('tl-range'); if (rangeEl) rangeEl.textContent = `片段 ${inn.toFixed(2)} – ${out.toFixed(2)}s`;
-  const activeEl = $('tl-active'); if (activeEl) activeEl.textContent = '编辑中：' + (state.activeInteractMesh || '—');
-  const playBtn = $('tl-play'); if (playBtn) playBtn.classList.toggle('playing', st.playing);
-}
-
-// 把当前激活 mesh 的起止区间写入交互配置并落库
-function setActiveClipRange(inT, outT) {
-  const id = state.selectedModelId;
-  if (!id || !state.activeInteractMesh) return;
-  const map = DB.getInteractions(id) || {};
-  const m = state.activeInteractMesh;
-  const base = map[m] || { clip: '', sound: '', respond: true, pingpong: false, autoReturn: false, deleteAfter: false, exit: false, clipIn: 0, clipOut: null };
-  base.clipIn = inT;
-  base.clipOut = outT;
-  map[m] = base;
-  DB.setInteractions(id, map);
-  viewer.setInteractions(map);
-  markSaved();
-}
-
-// 绑定时间轴走带控件与轨道交互（仅一次）
-function bindTimelineOnce() {
-  const dock = $('timeline-dock');
-  if (!dock || dock._tlBound) return;
-  dock._tlBound = true;
-  viewer.timelineOnUpdate(updateTimelineUI);
-
-  const playBtn = $('tl-play');
-  if (playBtn) playBtn.addEventListener('click', () => {
-    if (viewer.timelineGetState().playing) viewer.timelinePause();
-    else viewer.timelinePlay();
-    updateTimelineUI();
   });
-  const loopEl = $('tl-loop');
-  if (loopEl) loopEl.addEventListener('change', () => viewer.timelineSetLoop(loopEl.checked));
-  const speedEl = $('tl-speed');
-  if (speedEl) speedEl.addEventListener('change', () => viewer.timelineSetSpeed(parseFloat(speedEl.value) || 1));
-
-  const tracks = $('tl-tracks');
-  if (tracks) {
-    tracks.addEventListener('pointerdown', (e) => {
-      const lane = e.target.closest('.tl-lane');
-      if (!lane) return;
-      const clip = lane.dataset.clip;
-      const laneArea = lane.querySelector('.tl-lane-lane');
-      const rect = laneArea.getBoundingClientRect();
-      const dur = viewer.timelineGetState().duration || 0;
-      const handle = e.target.closest('.tl-handle');
-      if (handle) {
-        _tlDrag = { type: handle.dataset.h, rect, dur };
-      } else {
-        // 点击某片段轨道：若与当前激活 mesh 绑定的动画不同，则切换该 mesh 的动画
-        const m = state.activeInteractMesh;
-        if (m && clip) {
-          const map = DB.getInteractions(state.selectedModelId) || {};
-          const cur = map[m] || {};
-          if (cur.clip !== clip) {
-            const base = cur.clip !== undefined ? cur : { clip: '', sound: '', respond: true, pingpong: false, autoReturn: false, deleteAfter: false, exit: false, clipIn: 0, clipOut: null };
-            base.clip = clip;
-            map[m] = base;
-            DB.setInteractions(state.selectedModelId, map);
-            viewer.setInteractions(map);
-            markSaved();
-            const sel = document.querySelector('.interact-clip[data-mesh="' + CSS.escape(m) + '"]');
-            if (sel) sel.value = clip;
-            toast('已将「' + m + '」的动画设为 ' + clip);
-          }
-        }
-        // 在轨道上拖动 = 预览 scrub（暂停播放，定位时间）
-        viewer.timelinePause();
-        viewer.timelineSeek(((e.clientX - rect.left) / rect.width) * dur);
-        _tlDrag = { type: 'scrub', rect, dur };
-      }
+  body.querySelectorAll('.chain-del').forEach(btn => {
+    btn.addEventListener('click', () => deleteChain(btn.dataset.chain));
+  });
+  body.querySelectorAll('.chain-member .m-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      assignMeshToChain(btn.dataset.mesh, null);
+    });
+  });
+  body.querySelectorAll('.chain-member').forEach(m => {
+    m.addEventListener('click', () => {
+      if (viewer && viewer.highlightMesh) viewer.highlightMesh(m.dataset.mesh);
+    });
+  });
+  // 拖动排序 / 跨链移动
+  let dragInfo = null;
+  body.querySelectorAll('.chain-member').forEach(m => {
+    m.addEventListener('dragstart', (e) => {
+      dragInfo = { chain: m.dataset.chain, idx: parseInt(m.dataset.idx, 10), mesh: m.dataset.mesh };
+      m.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    m.addEventListener('dragend', () => { m.classList.remove('dragging'); dragInfo = null; });
+  });
+  body.querySelectorAll('.chain-members').forEach(box => {
+    box.addEventListener('dragover', (e) => { e.preventDefault(); box.classList.add('drag-over'); });
+    box.addEventListener('dragleave', () => box.classList.remove('drag-over'));
+    box.addEventListener('drop', (e) => {
       e.preventDefault();
+      box.classList.remove('drag-over');
+      if (!dragInfo) return;
+      const id = state.selectedModelId; if (!id) return;
+      const chains = DB.getChains(id) || [];
+      const src = chains.find(c => c.id === dragInfo.chain);
+      const dst = chains.find(c => c.id === box.dataset.chain);
+      if (!src || !dst) return;
+      const si = src.order.indexOf(dragInfo.mesh);
+      if (si < 0) return;
+      const [mm] = src.order.splice(si, 1);
+      let to = computeDropIndex(box, e.clientX, e.clientY);
+      if (src === dst && si < to) to -= 1;   // 同源删除后索引前移
+      if (to < 0) to = 0;
+      if (to > dst.order.length) to = dst.order.length;
+      dst.order.splice(to, 0, mm);
+      DB.setChains(id, chains);
+      pushChainsToViewer();
+      renderChains();
+      refreshChainDropdowns();
     });
-  }
-  document.addEventListener('pointermove', (e) => {
-    if (!_tlDrag) return;
-    const x = ((e.clientX - _tlDrag.rect.left) / _tlDrag.rect.width) * _tlDrag.dur;
-    if (_tlDrag.type === 'in') viewer.timelineSetIn(x);
-    else if (_tlDrag.type === 'out') viewer.timelineSetOut(x);
-    else if (_tlDrag.type === 'scrub') viewer.timelineSeek(x);
-    updateTimelineUI();
   });
-  document.addEventListener('pointerup', () => {
-    if (!_tlDrag) return;
-    if (_tlDrag.type === 'in' || _tlDrag.type === 'out') {
-      const st = viewer.timelineGetState();
-      setActiveClipRange(st.inTime, st.outTime);
-    }
-    _tlDrag = null;
-  });
-  // 空格键：播放 / 暂停预览（输入框 / 下拉聚焦时不拦截）
-  document.addEventListener('keydown', (e) => {
-    if (e.code !== 'Space') return;
-    const dock = $('timeline-dock');
-    if (!dock || dock.hasAttribute('hidden')) return;
-    const tag = (e.target.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.target.isContentEditable) return;
-    e.preventDefault();
-    if (viewer.timelineGetState().playing) viewer.timelinePause(); else viewer.timelinePlay();
-    updateTimelineUI();
+}
+
+// 刷新右侧交互块的「所属交互链」下拉，使其反映最新成员关系
+function refreshChainDropdowns() {
+  const id = state.selectedModelId; if (!id) return;
+  const chains = DB.getChains(id) || [];
+  document.querySelectorAll('.interact-chain').forEach(sel => {
+    const mesh = sel.dataset.mesh;
+    const cur = chainIdOfMesh(mesh);
+    sel.innerHTML = ['<option value="">— 不属于任何链（可任意触发）—</option>']
+      .concat(chains.map(ch => `<option value="${escapeHtml(ch.id)}" ${ch.id === cur ? 'selected' : ''}>${escapeHtml(ch.name)}</option>`))
+      .join('');
   });
 }
 
@@ -1251,7 +1255,7 @@ function renderAll() {
 // ============ 属性面板（模型信息 / 文件夹信息 互斥，共用同一栏） ============
 // 选中模型 → 显示模型信息；否则 → 显示当前文件夹（含根目录）信息。二者永不同时出现。
 async function renderProps() {
-  const dock = $('timeline-dock');
+  const dock = $('chain-dock');
   if (dock && !state.selectedModelId) dock.setAttribute('hidden', '');
   if (state.selectedModelId) {
     dom.infoContent.classList.remove('hidden');
@@ -1480,16 +1484,57 @@ async function handleExportFolderHTML() {
 }
 
 // ============ 上传 ============
+// 判断是否为音频文件（用于拖入时自动归入音效库）
+function isAudioFile(file) {
+  const lower = file.name.toLowerCase();
+  if (file.type && file.type.startsWith('audio/')) return true;
+  return ['.wav', '.mp3', '.ogg', '.m4a', '.flac', '.aac', '.webm', '.oga', '.opus', '.mid', '.midi']
+    .some(ext => lower.endsWith(ext));
+}
+
+// 导入音频文件到音效库（拖拽 / 「导入音效」按钮共用）
+async function importAudioFiles(files) {
+  let imported = 0;
+  for (const file of files) {
+    try {
+      const dataUrl = await base64FromFile(file);
+      const id = 'snd_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+      await DB.addSound({ id, name: file.name, type: file.type || 'audio/wav', dataUrl });
+      imported++;
+    } catch (err) {
+      console.error('音效导入失败', err);
+      toast(`音效导入失败：${file.name}`, 'error');
+    }
+  }
+  if (imported > 0) {
+    toast(`已导入 ${imported} 个音效`, 'success');
+    if (state.selectedModelId) await renderModelInfo();            // 刷新音效下拉
+    if (state.activeTab === 'sounds') await renderSoundsLibrary(); // 刷新音效库列表
+    viewer.setSounds(await DB.getAllSoundData());                  // 编辑器预览立即可用新音效
+  }
+  return imported;
+}
+
 async function handleUpload(files) {
   if (!files || files.length === 0) return;
-  let success = 0, fail = 0;
+  // 按类型分流：模型 / 音频 / 其它（不支持）
+  const modelFiles = [], audioFiles = [], otherFiles = [];
   for (const file of files) {
     const lower = file.name.toLowerCase();
-    if (!lower.endsWith('.glb') && !lower.endsWith('.gltf')) {
-      toast(`跳过非 GLB/GLTF 文件：${file.name}`, 'warning');
-      fail++;
-      continue;
-    }
+    if (lower.endsWith('.glb') || lower.endsWith('.gltf')) modelFiles.push(file);
+    else if (isAudioFile(file)) audioFiles.push(file);
+    else otherFiles.push(file);
+  }
+
+  // 音频文件：自动归入音效库（而非被跳过）
+  const soundsAdded = audioFiles.length > 0 ? await importAudioFiles(audioFiles) : 0;
+
+  // 其它不支持的文件：给出跳过提示
+  for (const file of otherFiles) toast(`跳过不支持的文件：${file.name}`, 'warning');
+
+  // 模型入库（GLB / GLTF）
+  let success = 0, fail = 0;
+  for (const file of modelFiles) {
     dom.statStatus.textContent = `● 上传 ${file.name}`;
     dom.statStatus.className = 'item warn';
     try {
@@ -1524,8 +1569,13 @@ async function handleUpload(files) {
       fail++;
     }
   }
-  dom.statStatus.textContent = `● 完成 (${success} 成功, ${fail} 失败)`;
-  dom.statStatus.className = fail > 0 ? 'item warn' : 'item ok';
+  // 汇总状态：模型数 / 音效数 / 跳过数
+  const parts = [];
+  if (success > 0) parts.push(`${success} 个模型`);
+  if (soundsAdded > 0) parts.push(`${soundsAdded} 个音效`);
+  if (otherFiles.length > 0) parts.push(`跳过 ${otherFiles.length} 个`);
+  dom.statStatus.textContent = '● 完成' + (parts.length ? ` (${parts.join(' / ')})` : '');
+  dom.statStatus.className = (fail > 0 || otherFiles.length > 0) ? 'item warn' : 'item ok';
   setTimeout(() => { dom.statStatus.textContent = '● 就绪'; dom.statStatus.className = 'item ok'; }, 3000);
   renderAll();
 }
@@ -1687,6 +1737,7 @@ async function loadModelIntoViewer(id) {
     }
     const stats = await viewer.loadFromBlob(blob, node.defaultView || null);
     viewer.setInteractions(DB.getInteractions(id) || {});
+    viewer.setChains(DB.getChains(id) || []);   // 把交互链推给 3D 预览，链门禁才能在编辑器内生效（方便预览解谜顺序）
     viewer.setSounds(await DB.getAllSoundData());
     const nodeName = node.name;
     dom.ovInfo.textContent = `${nodeName} · 拖拽旋转 · 滚轮缩放 · 右键/中键平移`;
@@ -1930,23 +1981,7 @@ function bindEvents() {
   $('sound-input').addEventListener('change', async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    let imported = 0;
-    for (const file of files) {
-      try {
-        const dataUrl = await base64FromFile(file);
-        const id = 'snd_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
-        await DB.addSound({ id, name: file.name, type: file.type || 'audio/wav', dataUrl });
-        imported++;
-      } catch (err) {
-        console.error('音效导入失败', err);
-        toast(`音效导入失败：${file.name}`, 'error');
-      }
-    }
-    if (imported > 0) {
-      toast(`已导入 ${imported} 个音效`, 'success');
-      if (state.selectedModelId) await renderModelInfo(); // 刷新音效下拉
-      if (state.activeTab === 'sounds') await renderSoundsLibrary(); // 刷新音效库
-    }
+    await importAudioFiles(files);
     e.target.value = '';
   });
   $('btn-import').addEventListener('click', handleImport);
@@ -2324,7 +2359,7 @@ async function ensureViewer() {
   if (viewer) return;
   await _threeReadyPromise;
   viewer = new GLBViewer(dom.viewerContainer);
-  viewer.setOnInteract((meshName) => { highlightMeshInList(meshName); setActiveInteractMesh(meshName, { skipGrab: true }); });
+  viewer.setOnInteract((meshName) => { highlightMeshInList(meshName); });
   // 3D 视图角落按钮（常驻，与「设为默认视角」同级）：
   // 重置视角 / 切换自动旋转 / 设为默认视角
   $('btn-reset-cam')?.addEventListener('click', () => viewer.resetCamera());

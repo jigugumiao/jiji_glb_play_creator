@@ -111,6 +111,27 @@ let popObj = null, popBase = null, popActive = false;
 // 动画结束后删除该物体：action.uuid -> 是否删除 / 触发该 action 的 mesh
 let deleteFlag = {};
 let triggerObj = {};
+// 交互链 + 仅响应一次（成品运行时门禁）
+let chains = __CHAINS__;             // [{ id, name, order:[meshName] }]
+let _triggered = {};                 // meshName -> true：已被触发过（链推进与 once 限制）
+function chainToast(msg) {
+  if (typeof window.toast === 'function') { window.toast(msg, 'warn'); return; }
+  var t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);background:rgba(20,24,33,.92);color:#ffd479;padding:8px 14px;border-radius:8px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+  document.body.appendChild(t);
+  setTimeout(function(){ t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(function(){ t.remove(); }, 400); }, 1400);
+}
+// 链门禁：不在任何链上→允许；在链上且非链首→需前一个已触发
+function _chainUnlocked(meshName) {
+  if (!chains || !chains.length) return true;
+  for (var ci = 0; ci < chains.length; ci++) {
+    var ch = chains[ci]; if (!ch || !ch.order) continue;
+    var idx = ch.order.indexOf(meshName);
+    if (idx > 0 && !_triggered[ch.order[idx - 1]]) return false;
+  }
+  return true;
+}
 
 const infoEl = document.getElementById('info');
 const statsEl = document.getElementById('stats');
@@ -155,6 +176,7 @@ function disposeModel(model) {
 }
 
 function loadModel() {
+  _triggered = {};   // 重新加载模型时清空触发进度（单模型场景通常不重入，留作保险）
   blobUrl = dataUrlToBlobUrl(MODEL_SRC);
   const loader = new GLTFLoader();
   loader.load(
@@ -297,7 +319,13 @@ function triggerMeshInteraction(meshName, hitObj) {
   var soundId = (typeof entry === 'string') ? '' : (entry.sound || '');
   var respond = (typeof entry === 'string') ? true : (entry.respond !== false);
   if (respond === false) return false; // 未勾选「响应点击」
+  // 交互链门禁：同链上后一个部位需前一个已触发（成品运行时生效，便于做顺序解谜）
+  if (!_chainUnlocked(meshName)) { return false; } // 链未解锁：静默拦截，不出戏（不再弹提示）
+  // 仅响应一次：默认只响应一次点击；勾选「允许多次点击」(once===false) 才允许重复
+  var once = (typeof entry === 'string') ? true : (entry.once !== false);
+  if (once && _triggered[meshName]) { return false; } // 已触发过且 once：静默拦截，不出戏
   doPop(hitObj); // 放大 1% 一帧反馈
+  _triggered[meshName] = true; // 标记已触发（推进链 / 限制 once）
   var did = false;
   var ping = (typeof entry === 'object') && (!!entry.pingpong);
   var auto = (typeof entry === 'object') && (!!entry.autoReturn);
@@ -504,7 +532,7 @@ function collectExitMeshes(interactions) {
 // 模板：把 viewer 源码和模型元数据塞进去
 // embed/exitMeshes/modelId 用于剧情联动：embed=true 时该 HTML 被剧情编辑器 iframe 召唤，
 // 点中 exitMeshes 中任一部位会向父页面 postMessage({type:'glb-scene-exit', id, mesh}) 通知结束场景
-function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions, sounds, defaultView, embed, exitMeshes, modelId, lockRotation) {
+function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions, sounds, defaultView, embed, exitMeshes, modelId, lockRotation, chains) {
   // 转义 modelName：放到 JS 字符串里需要转义反引号、反斜杠、${}
   const safeName = modelName.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
   const safeBlob = base64DataUrl; // base64 本身不含特殊字符
@@ -542,6 +570,7 @@ function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions,
     .replace('__MODEL_BLOB__', '`' + safeBlob + '`')
     .replace('__SCENE_BG__', bgCode)
     .replace('__INTERACTIONS__', JSON.stringify(interactions || {}).replace(/</g, '\\u003c'))
+    .replace('__CHAINS__', JSON.stringify(chains || []).replace(/</g, '\\u003c'))
     .replace('__SOUNDS__', JSON.stringify(sounds || {}).replace(/</g, '\\u003c'))
     .replace('__DEFAULT_VIEW__', JSON.stringify(defaultView || null))
     .replace('__LOCK_ROTATION__', lockRotation ? 'true' : 'false')
@@ -633,6 +662,7 @@ async function exportModelAsStandaloneHTML(modelId, DB, bgSettings) {
   if (!blob) throw new Error('模型数据丢失');
   const dataUrl = await blobToDataUrl(blob); // 导出 HTML 需自包含 base64
   const interactions = DB.getInteractions(modelId) || {};
+  const chains = DB.getChains(modelId) || []; // 交互链（解谜顺序）
   // 收集交互里引用的音效，内联进 HTML（保持自包含）
   const sounds = {};
   for (const k in interactions) {
@@ -643,7 +673,7 @@ async function exportModelAsStandaloneHTML(modelId, DB, bgSettings) {
       if (d) sounds[sid] = d;
     }
   }
-  const html = buildStandaloneHTML(node.name, dataUrl, bgSettings, interactions, sounds, node.defaultView || null, false, collectExitMeshes(interactions), '', !!node.lockRotation);
+  const html = buildStandaloneHTML(node.name, dataUrl, bgSettings, interactions, sounds, node.defaultView || null, false, collectExitMeshes(interactions), '', !!node.lockRotation, chains);
   const safeName = (node.name || 'model').replace(/[\\/:*?"<>|]/g, '_');
   const filename = safeName.replace(/\.glb$/i, '') + '.html';
   downloadText(html, filename, 'text/html;charset=utf-8');
@@ -687,6 +717,27 @@ var popObj = null, popBase = null, popActive = false;
 // 动画结束后删除该物体：action.uuid -> 是否删除 / 触发该 action 的 mesh
 var deleteFlag = {};
 var triggerObj = {};
+// 交互链 + 仅响应一次（成品运行时门禁）
+var chains = [];
+var _triggered = {};
+function chainToast(msg) {
+  if (typeof window.toast === 'function') { window.toast(msg, 'warn'); return; }
+  var t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);background:rgba(20,24,33,.92);color:#ffd479;padding:8px 14px;border-radius:8px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+  document.body.appendChild(t);
+  setTimeout(function(){ t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(function(){ t.remove(); }, 400); }, 1400);
+}
+// 链门禁：不在任何链上→允许；在链上且非链首→需前一个已触发
+function _chainUnlocked(meshName) {
+  if (!chains || !chains.length) return true;
+  for (var ci = 0; ci < chains.length; ci++) {
+    var ch = chains[ci]; if (!ch || !ch.order) continue;
+    var idx = ch.order.indexOf(meshName);
+    if (idx > 0 && !_triggered[ch.order[idx - 1]]) return false;
+  }
+  return true;
+}
 
 function escHtml(s) {
   var d = document.createElement('div');
@@ -860,7 +911,13 @@ function triggerMeshInteraction(meshName, hitObj) {
   var soundId = (typeof entry === 'string') ? '' : (entry.sound || '');
   var respond = (typeof entry === 'string') ? true : (entry.respond !== false);
   if (respond === false) return false; // 未勾选「响应点击」
+  // 交互链门禁：同链上后一个部位需前一个已触发（成品运行时生效，便于做顺序解谜）
+  if (!_chainUnlocked(meshName)) { return false; } // 链未解锁：静默拦截，不出戏（不再弹提示）
+  // 仅响应一次：默认只响应一次点击；勾选「允许多次点击」(once===false) 才允许重复
+  var once = (typeof entry === 'string') ? true : (entry.once !== false);
+  if (once && _triggered[meshName]) { return false; } // 已触发过且 once：静默拦截，不出戏
   doPop(hitObj); // 放大 1% 一帧反馈
+  _triggered[meshName] = true; // 标记已触发（推进链 / 限制 once）
   var did = false;
   var ping = (typeof entry === 'object') && (!!entry.pingpong);
   var auto = (typeof entry === 'object') && (!!entry.autoReturn);
@@ -1163,6 +1220,8 @@ function loadModel(index) {
 
     buildActionIndex();
     interactions = model.interactions || {};
+    chains = model.chains || [];     // 交互链顺序（解谜）
+    _triggered = {};                 // 切换模型时清空触发进度
     // 自动播放：未配置点击交互(增效)时，打开即播放首个动画一次并停在末帧
     if (mixer && animActions.length && Object.keys(interactions).length === 0) {
       animActions[0].reset();
@@ -1462,7 +1521,7 @@ async function exportFolderAsGalleryHTML(folderId, DB, bgSettings) {
           if (d) sounds[sid] = d;
         }
       }
-      modelsByNodeId[nid] = { name: node.name, data: dataUrl, bg: mBg, interactions: interactions, sounds: sounds, defaultView: node.defaultView || null, lockRotation: !!node.lockRotation };
+      modelsByNodeId[nid] = { name: node.name, data: dataUrl, bg: mBg, interactions: interactions, sounds: sounds, defaultView: node.defaultView || null, lockRotation: !!node.lockRotation, chains: DB.getChains(nid) || [] };
     }
   }
 
@@ -1473,7 +1532,7 @@ async function exportFolderAsGalleryHTML(folderId, DB, bgSettings) {
     var singleEntry = modelsByNodeId[singleId];
     if (!singleEntry) throw new Error('该模型数据丢失');
     var singleBg = DB.resolveBgSettings(singleId);
-    var html = buildStandaloneHTML(singleNode.name, singleEntry.data, singleBg, singleEntry.interactions, singleEntry.sounds, singleNode.defaultView, false, collectExitMeshes(singleEntry.interactions), '', singleEntry.lockRotation);
+    var html = buildStandaloneHTML(singleNode.name, singleEntry.data, singleBg, singleEntry.interactions, singleEntry.sounds, singleNode.defaultView, false, collectExitMeshes(singleEntry.interactions), '', singleEntry.lockRotation, singleEntry.chains);
     var safeName = (singleNode.name || 'model').replace(/[\\/:*?"<>|]/g, '_');
     var filename = safeName.replace(/\.glb$/i, '') + '.html';
     downloadText(html, filename, 'text/html;charset=utf-8');
@@ -1548,6 +1607,7 @@ async function exportSceneBundleZip(DB) {
       glbFile: glbName,
       defaultView: n.defaultView || null,
       lockRotation: !!n.lockRotation,
+      chains: DB.getChains(n.id) || [],
       bg: bgToCSS(DB.resolveBgSettings(n.id)),
       exitMeshes: collectExitMeshes(interactions),
       exitMesh: collectExitMeshes(interactions)[0] || null, // 兼容旧版单结束物体字段
@@ -1607,6 +1667,7 @@ async function exportSingleModelJgl(modelId, DB) {
     glbFile: glbName,
     defaultView: node.defaultView || null,
     lockRotation: !!node.lockRotation,
+    chains: DB.getChains(node.id) || [],
     bg: bgToCSS(DB.resolveBgSettings(node.id)),
     exitMeshes: collectExitMeshes(interactions),
     exitMesh: collectExitMeshes(interactions)[0] || null,

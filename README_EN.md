@@ -19,7 +19,7 @@ A **pure front-end** (vanilla HTML + JavaScript + three.js, zero dependencies, z
   - play an animation clip (with **clip trimming** `clipIn`/`clipOut`, loop / ping-pong / reset-after-play);
   - play a sound effect;
   - disappear after click (as an "exit object", useful for branching the story).
-- **Timeline clip preview**: a bottom dock lets you drag in/out handles to trim a clip and set loop / speed — preview only, does not affect export.
+- **Interaction chains (puzzle order)**: the bottom dock lets you create multiple chains and drag trigger parts into them in sequence; on the same chain, a later part can only be clicked after the previous one has been clicked — perfect for ordered puzzles. Parts not in any chain are unrestricted. All parts **respond to a single click by default** (to avoid puzzle animations being reversed / replayed, e.g. a box opens and stays open), with an "allow multiple clicks" checkbox to lift the limit.
 - **Default view**: save the current camera as the model's default view; "reset view" returns to it; applied automatically on next open.
 - **Lock manual rotation**: when enabled, the exported result is pinned to the default view and the user cannot rotate (zoom / pan still allowed).
 - **Three export forms**:
@@ -36,7 +36,7 @@ This tool's **`.jgl` bundle** is for the **[jiji_text_game_editor (Story Editor)
 ```
 index.html              entry (3D Interactive Asset Maker UI)
 css/style.css           styles
-js/main.js              main logic (project tree / interaction editing / export UI / timeline)
+js/main.js              main logic (project tree / interaction editing / export UI / interaction chains)
 js/viewer.js            3D viewer (OrbitControls / GLTFLoader / AnimationMixer)
 js/exporter.js          exports: standalone viewer / directory gallery / .jgl bundle
 js/db.js                local project data (IndexedDB for binaries + localStorage for structure)

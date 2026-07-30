@@ -905,6 +905,20 @@ function resolveBgSettings(nodeId) {
   return { type: 'solid', color1: '#000000' };
 }
 
+// 交互链（解谜顺序）：每个模型可有多条链，每条链是有序的 mesh 名数组 [{ id, name, order:[meshName] }]
+function getChains(nodeId) {
+  const n = _tree.nodes[nodeId];
+  if (!n) return [];
+  return n.chains || [];
+}
+function setChains(nodeId, chains) {
+  const n = _tree.nodes[nodeId];
+  if (!n) return;
+  if (Array.isArray(chains) && chains.length > 0) n.chains = chains;
+  else delete n.chains;
+  saveTree();
+}
+
 // 清空当前项目（树 + 本项目 blob + 本项目音效）
 async function resetAll() {
   const tree = loadTree();
@@ -946,6 +960,7 @@ window.DB = {
   exportProject, exportProjectById, importProject, resetAll,
   setBgSettings, getBgSettings, resolveBgSettings,
   setInteractions, getInteractions,
+  setChains, getChains,
   addSound, getSound, getSoundDataUrl, getSounds, getAllSoundData, deleteSound, renameSound,
   // 多项目
   listProjects, createProject, renameProject, deleteProject, cloneProject,

@@ -30,16 +30,17 @@ class GLBViewer {
     this.animActions = [];
     this._prevTime = 0;
 
-    // 时间轴预览控制（作用域 A：嵌入 GLB 片段查看器）
-    // 独立于交互点击播放：手动推进 action.time（timeScale=0 防止 mixer 自动推进）
-    this._timeline = { action: null, playing: false, loop: false, speed: 1, inTime: 0, outTime: null, clipName: null, onUpdate: null };
     // 交互点击播放某片段时使用的起止区间（uuid -> { in, out }），让点击播放尊重 in/out
     this._actionRange = {};
+
+    // 交互链（解谜顺序）与触发进度
+    this._chains = [];              // [{ id, name, order:[meshName] }]
+    this._triggered = {};           // meshName -> true：已被触发过（用于链门禁与 once）
 
     // 点击交互相关
     this._raycaster = new THREE.Raycaster();
     this._pointer = new THREE.Vector2();
-    this._interactions = {};        // meshName -> { clip, sound, respond, pingpong, autoReturn }
+    this._interactions = {};        // meshName -> { clip, sound, respond, pingpong, autoReturn, once }
     this._soundsData = {};          // soundId -> dataUrl（音效库）
     this._soundCache = {};          // soundId -> Audio（懒加载）
     this._actionByName = {};        // clipName -> action
@@ -219,27 +220,6 @@ class GLBViewer {
           }
         }
       }
-
-      // 时间轴预览：独立于交互点击播放，手动推进 action.time
-      // （timeScale=0 禁止 mixer 自动推进，时间完全由下方控制；mixer.update 仍按当前 time 应用姿态）
-      if (this._timeline.action) {
-        const a = this._timeline.action;
-        const dur = a.getClip().duration || 0;
-        const out = (this._timeline.outTime != null) ? Math.min(Math.max(this._timeline.outTime, 0), dur) : dur;
-        const inn = Math.min(Math.max(this._timeline.inTime, 0), out);
-        a.timeScale = 0;
-        if (this._timeline.playing) {
-          let t = a.time + delta * this._timeline.speed;
-          const span = out - inn;
-          if (span > 1e-4) {
-            if (t > out) t = this._timeline.loop ? inn + (((t - inn) % span) + span) % span : out;
-            if (t < inn) t = inn;
-          } else { t = inn; }
-          if (!this._timeline.loop && t >= out - 1e-4) { t = out; this._timeline.playing = false; }
-          a.time = t;
-        }
-        if (this._timeline.onUpdate) this._timeline.onUpdate(a.time, dur, this._timeline.playing, inn, out);
-      }
     }
 
     // 内置简易动画推进（不依赖 mixer，即使模型无自带动画也能播放）
@@ -281,9 +261,9 @@ class GLBViewer {
       this._actionByName = {};
       this._actionByUuid = {};
       this._actionState = {};
-      this._timeline.action = null;
-      this._timeline.playing = false;
       this._actionRange = {};
+      this._chains = [];
+      this._triggered = {};
       this._popObj = null;
       this._popBase = null;
       this._popActive = false;
@@ -486,7 +466,7 @@ class GLBViewer {
   // 高亮某个 mesh（在视口内闪一下青色自发光），用于「点面板部位 → 提示正在配置的是哪个 mesh」
   // 关键：GLB 里很多 mesh 共用同一个 Material 实例，若直接改共享材质的 emissive，
   // 会用该材质的所有 mesh 一起发光（看起来「所有物品都高亮」）。
-  // 因此这里给「被选中的那个 mesh」单独克隆材质再上发光色，只染它一个，0.9s 后还原并释放克隆。
+  // 因此这里给「被选中的那个 mesh」单独克隆材质再上发光色，只染它一个，350ms 后还原并释放克隆。
   highlightMesh(name) {
     if (!this.currentModel || !name) return;
     // 先还原上一次高亮，避免快速连点导致多个部位一直亮着
@@ -512,7 +492,7 @@ class GLBViewer {
     });
     if (saved.length === 0) return;
     this._hlSaved = saved;
-    this._hlTimer = setTimeout(() => { this._restoreHighlight(); }, 900);
+    this._hlTimer = setTimeout(() => { this._restoreHighlight(); }, 350);
   }
 
   // 还原高亮：把克隆材质换回原材质，并 dispose 克隆以释放显存（不碰共享纹理）
@@ -531,15 +511,6 @@ class GLBViewer {
 
   hasAnimations() {
     return this.mixer !== null && this.animActions.length > 0;
-  }
-
-  // 是否有交互点击触发的动画正在播放（用于避免时间轴预览抢占同一 action）
-  isInteracting() {
-    if (!this.mixer) return false;
-    for (const uuid in this._actionState) {
-      if (this._actionState[uuid] && this._actionState[uuid] !== 'idle') return true;
-    }
-    return false;
   }
 
   setOnInteract(callback) {
@@ -634,90 +605,25 @@ class GLBViewer {
     return Object.keys(PRESET_ANIMS).map(k => ({ value: 'preset:' + k, label: PRESET_ANIMS[k].label }));
   }
 
-  // 列出所有动画片段及其时长（供时间轴轨道），返回 [{ name, duration }]
-  getClipInfo() {
-    return this.animActions.map(a => ({ name: a.getClip().name, duration: a.getClip().duration }));
+  // ============ 交互链（解谜顺序）门禁 ============
+  // 设置当前模型的交互链；门禁在 triggerMeshInteraction 中生效（编辑器预览也启用，便于测试顺序）
+  setChains(chains) {
+    this._chains = Array.isArray(chains) ? chains : [];
+    this._triggered = {};   // 换链配置后触发进度归零，方便重新测试
   }
 
-  // ============ 时间轴预览控制（作用域 A：嵌入 GLB 片段查看器） ============
-  // 设计：时间轴只负责「预览」某个片段并设定起止区间；起止最终写入交互配置，
-  // 使得在 3D 界面里点击该部位时播放的是指定段落。与交互点击播放相互独立。
-
-  // 注册播放头/时间更新回调（main.js 用来驱动 UI 播放头与数字）
-  timelineOnUpdate(cb) { this._timeline.onUpdate = cb; }
-
-  // 选择要在时间轴预览的片段；name 为空则清空预览控制
-  timelineSetClip(name) {
-    if (!this.mixer) return false;
-    // 复位旧 action 的 timeScale，避免残留 0 影响后续交互播放
-    if (this._timeline.action && this._timeline.action !== this._actionByName[name]) {
-      this._timeline.action.timeScale = 1;
+  // 某 mesh 当前是否允许触发：
+  // 不在任何链上 → 允许（可任意触发）；在链上且不是链首 → 需前一个部位已被触发过
+  _chainUnlocked(meshName) {
+    for (const ch of this._chains) {
+      const idx = ch.order.indexOf(meshName);
+      if (idx > 0) {
+        const prev = ch.order[idx - 1];
+        if (!this._triggered[prev]) return false;
+      }
     }
-    if (!name) { this._timeline.action = null; this._timeline.clipName = null; return false; }
-    const a = this._actionByName[name];
-    if (!a) return false;
-    a.reset();
-    a.setLoop(THREE.LoopRepeat, Infinity);
-    a.clampWhenFinished = false;
-    a.enabled = true;
-    a.paused = false;
-    a.play();
-    this._timeline.action = a;
-    this._timeline.clipName = name;
-    const dur = a.getClip().duration;
-    if (this._timeline.outTime == null || this._timeline.outTime > dur) this._timeline.outTime = dur;
-    if (this._timeline.inTime > this._timeline.outTime) this._timeline.inTime = 0;
-    a.timeScale = 0;                 // 关键：禁止 mixer 自动推进，时间由下方手动控制
-    a.time = this._timeline.inTime;
-    if (this._timeline.onUpdate) this._timeline.onUpdate(a.time, dur, this._timeline.playing, this._timeline.inTime, this._timeline.outTime);
     return true;
   }
-
-  timelinePlay() {
-    if (!this._timeline.action) {
-      if (!this.timelineSetClip(this._timeline.clipName || this.getClipList()[0])) return false;
-    }
-    this._timeline.playing = true;
-    return true;
-  }
-  timelinePause() { this._timeline.playing = false; }
-  timelineSeek(t) {
-    if (!this._timeline.action) return;
-    const dur = this._timeline.action.getClip().duration;
-    const out = (this._timeline.outTime != null) ? Math.min(this._timeline.outTime, dur) : dur;
-    const inn = Math.min(this._timeline.inTime, out);
-    this._timeline.action.time = Math.min(Math.max(t, inn), out);
-    if (this._timeline.onUpdate) this._timeline.onUpdate(this._timeline.action.time, dur, this._timeline.playing, inn, out);
-  }
-  timelineSetLoop(b) { this._timeline.loop = !!b; }
-  timelineSetSpeed(x) { this._timeline.speed = x; }
-  timelineSetIn(t) {
-    this._timeline.inTime = Math.max(0, t);
-    if (this._timeline.outTime != null && this._timeline.inTime > this._timeline.outTime) {
-      this._timeline.inTime = this._timeline.outTime;
-    }
-    if (this._timeline.action && !this._timeline.playing) this._timeline.action.time = this._timeline.inTime;
-  }
-  timelineSetOut(t) {
-    if (!this._timeline.action) return;
-    const dur = this._timeline.action.getClip().duration;
-    this._timeline.outTime = Math.min(Math.max(t, this._timeline.inTime), dur);
-  }
-  timelineGetState() {
-    const a = this._timeline.action;
-    return {
-      clipName: this._timeline.clipName,
-      playing: this._timeline.playing,
-      loop: this._timeline.loop,
-      speed: this._timeline.speed,
-      inTime: this._timeline.inTime,
-      outTime: this._timeline.outTime,
-      duration: a ? a.getClip().duration : 0,
-      time: a ? a.time : 0,
-    };
-  }
-  // 交互点击播放某片段时调用：暂停时间轴预览控制，避免与手动时间控制打架
-  timelineSuspend() { this._timeline.action = null; this._timeline.playing = false; }
 
   // 播放一个内置简易动画（不依赖 mixer，即使模型无自带动画也能用）
   _playPreset(name, obj, del) {
@@ -746,8 +652,17 @@ class GLBViewer {
     if (!entry) return false;
     if (entry.respond === false) return false; // 未勾选「响应点击」则完全不反应
 
+    // 交互链门禁（编辑器预览也启用，便于测试解谜顺序）：同链上后一个部位需前一个已触发
+    if (!this._chainUnlocked(meshName)) {
+      if (typeof window.toast === 'function') window.toast('请先触发前一个部位（见底部交互链顺序）', 'warn');
+      return false;
+    }
+
     // 点击反馈：放大 1%，下一帧还原（见 _animate 里的还原逻辑），与物体动画互不干扰
     this._doPop(hitObj);
+
+    // 标记已触发：用于链门禁推进与 once 限制（编辑器预览忽略 once，运行时才真正限制）
+    this._triggered[meshName] = true;
 
     let did = false;
     // 动画：内置预设动画（无需 mixer）或 GLB 自带 clip
@@ -765,8 +680,6 @@ class GLBViewer {
           const dur = action.getClip().duration;
           const range = { in: entry.clipIn || 0, out: (entry.clipOut != null ? entry.clipOut : dur) };
           this._actionRange[action.uuid] = range;
-          // 点击播放时暂停时间轴预览控制，避免与手动时间控制打架
-          this.timelineSuspend();
           this._toggleAction(action, entry.pingpong, entry.autoReturn, range);
           did = true;
         }

@@ -145,31 +145,14 @@
     </aside>
   </main>
 
-  <!-- 时间轴（嵌入 GLB 片段查看器）：底部停靠条，随选中模型是否有动画而显隐 -->
-  <div class="timeline-dock" id="timeline-dock" hidden>
-    <div class="tl-transport">
-      <button class="tl-btn tl-play" id="tl-play" title="播放 / 暂停预览（空格）">
-        <span class="ico-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg></span>
-        <span class="ico-pause" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></span>
-      </button>
-      <span class="tl-time" id="tl-time">0.00 / 0.00s</span>
-      <label class="tl-ctl" title="循环播放起止区间"><input type="checkbox" id="tl-loop"> 循环</label>
-      <label class="tl-ctl">速度
-        <select id="tl-speed">
-          <option value="0.25">0.25x</option>
-          <option value="0.5">0.5x</option>
-          <option value="1" selected>1x</option>
-          <option value="1.5">1.5x</option>
-          <option value="2">2x</option>
-        </select>
-      </label>
-      <span class="tl-range" id="tl-range">片段 0.00 – 0.00s</span>
-      <span style="flex:1"></span>
-      <span class="tl-active" id="tl-active">编辑中：—</span>
+  <!-- 交互链（解谜顺序）：底部停靠条，随选中模型是否有可交互部位而显隐 -->
+  <div class="chain-dock" id="chain-dock" hidden>
+    <div class="chain-bar">
+      <span class="chain-title">交互链（解谜顺序）</span>
+      <button class="chain-add" id="chain-add" title="新建一条交互链">+ 新建交互链</button>
+      <span class="chain-hint">拖动部位块调整先后顺序；未加入任何链的部位可任意触发</span>
     </div>
-    <div class="tl-body">
-      <div class="tl-tracks" id="tl-tracks"></div>
-    </div>
+    <div class="chain-body" id="chain-body"></div>
   </div>
 
   <!-- 状态栏 -->
