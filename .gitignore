@@ -1,0 +1,18 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+
+# 项目内部记忆与工作日志
+.workbuddy/
+
+# 临时/过期备份
+*.bak-*
+
+# 系统/编辑器缓存
+.DS_Store
+Thumbs.db
+
+# 本地部署状态文件（含 token，勿入库）
+.htmltolink.json
