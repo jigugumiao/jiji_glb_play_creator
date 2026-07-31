@@ -51,6 +51,7 @@ const dom = {
   togglePanelLabel: $('toggle-panel-label'),
   btnLang: $('btn-lang'),
   langLabel: $('lang-label'),
+  versionBadge: $('version-badge'),
 };
 
 // ============ 图标（内联 SVG，无 emoji） ============
@@ -787,8 +788,8 @@ function mountInlineBg(container, nodeId) {
 
   const solidChecked = isSolid ? 'checked' : '';
   const gradChecked = isSolid ? '' : 'checked';
-  const solidDisplay = isSolid ? '' : 'display:none';
-  const gradDisplay = isSolid ? 'display:none' : '';
+  const solidDisplay = isSolid ? '' : 'display:none; ';
+  const gradDisplay = isSolid ? 'display:none; ' : '';
 
   container.innerHTML = '<div class="bg-modal-body">'
     + '<div class="bg-mode-toggle">'
@@ -1265,10 +1266,19 @@ async function renderProps() {
     dom.infoContent.classList.remove('hidden');
     dom.folderContent.classList.add('hidden');
     await renderModelInfo();
-  } else {
+  } else if (state.selectedFolderId) {
     dom.infoContent.classList.add('hidden');
     dom.folderContent.classList.remove('hidden');
     await renderFolderInfo();
+  } else {
+    // 未选中任何对象：显示默认空状态，避免刚进项目就露出背景色设置
+    dom.folderContent.classList.add('hidden');
+    dom.infoContent.classList.remove('hidden');
+    dom.infoContent.innerHTML = `
+      <div class="empty-grid" style="height:auto;padding:20px 0">
+        <div class="icon">${ICONS.cube}</div>
+        <div class="hint">${t('选择一个模型查看详情')}</div>
+      </div>`;
   }
 }
 
@@ -1813,8 +1823,8 @@ async function showBgModal(nodeId) {
 
   var solidChecked = isSolid ? 'checked' : '';
   var gradChecked = isSolid ? '' : 'checked';
-  var solidDisplay = isSolid ? '' : 'display:none';
-  var gradDisplay = isSolid ? 'display:none' : '';
+  var solidDisplay = isSolid ? '' : 'display:none; ';
+  var gradDisplay = isSolid ? 'display:none; ' : '';
 
   var html = '<div class="bg-modal-body">'
     + '<div class="bg-modal-hint">' + t('为 {name} 设置背景色', { name: '<b>' + escapeHtml(nodeName) + '</b>' }) + '</div>'
@@ -2531,6 +2541,7 @@ DB.migrateLegacyIfNeeded()
     updateLangLabel();
     window.applyStatic(document);
     window.addEventListener('langchange', onLangChange);
+    if (dom.versionBadge) dom.versionBadge.textContent = 'v' + window.APP_VERSION;
     bindEvents();
     renderProjectsScreen();
   })
@@ -2539,6 +2550,7 @@ DB.migrateLegacyIfNeeded()
     updateLangLabel();
     window.applyStatic(document);
     window.addEventListener('langchange', onLangChange);
+    if (dom.versionBadge) dom.versionBadge.textContent = 'v' + window.APP_VERSION;
     bindEvents();
     renderProjectsScreen();
   });

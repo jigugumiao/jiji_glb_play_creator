@@ -81,6 +81,18 @@ input, button, textarea, select { color: var(--txt); }
 }
 .brand .mark { width: 22px; height: 22px; color: var(--txt); flex: 0 0 auto; }
 .brand .mark svg { width: 100%; height: 100%; display: block; }
+.version-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--txt-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 1px 7px;
+  letter-spacing: 0.2px;
+  margin-left: 4px;
+  user-select: none;
+}
 
 .proj-pill {
   display: flex;
