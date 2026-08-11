@@ -394,6 +394,9 @@ function renderCrumbs() {
 // 「基本信息」「几何信息」默认收起（对制作帮助不大），点击标题展开/收回
 let basicInfoExpanded = false;
 let geoInfoExpanded = false;
+let interactExpanded = false;
+let envExpanded = false;
+let rotationExpanded = false;
 async function renderModelInfo() {
   const id = state.selectedModelId;
   if (!id) {
@@ -445,9 +448,14 @@ async function renderModelInfo() {
     if (viewer.getMeshList().length > 0) {
       html += `
     <div class="panel-section">
-      <h4>${t('点击交互配置')}</h4>
-      <div class="hint" style="font-size:11px;margin-bottom:8px;color:#8b93a3">点击模型上的部位，触发此处绑定的动画与音效（音效每次点击都会播放）。下面每个选项含义：<br>· <b>点击时响应</b>：取消后点击该物体无任何反应；<br>· <b>来回播放</b>：点一下正向播放，再点一下倒放回开头（需要两次点击）；<br>· <b>动画自动归位</b>：点一下即自动完整来回一次（正向播完自动倒放回开头，连续无需再次点击）；<br>· <b>动画结束后删除该物体</b>：动画（来回）播放完毕后，该物体从场景中消失，不可再点击；<br>· <b>设为结束物体</b>：在联动剧情工具里召唤该 3D 界面后，点击此物体即结束 3D 界面、继续剧情（可设置多个）。<br>音效在左侧「音效库」标签里导入与管理。</div>
-      <div id="interact-list"></div>
+      <h4 class="collapse-toggle" data-body="interact-body" style="cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;margin-bottom:${interactExpanded ? '8px' : '0'}" title="${t('点击展开 / 收起点击交互配置')}">
+        <span class="collapse-arrow" style="display:inline-block;font-size:10px;line-height:1;color:var(--txt-2)">${interactExpanded ? '▾' : '▸'}</span>
+        ${t('点击交互配置')}
+      </h4>
+      <div class="collapse-body" id="interact-body" ${interactExpanded ? '' : 'hidden'}>
+        <div class="hint" style="font-size:11px;margin-bottom:8px;color:#8b93a3">点击模型上的部位，触发此处绑定的动画与音效（音效每次点击都会播放）。下面每个选项含义：<br>· <b>点击时响应</b>：取消后点击该物体无任何反应；<br>· <b>来回播放</b>：点一下正向播放，再点一下倒放回开头（需要两次点击）；<br>· <b>动画自动归位</b>：点一下即自动完整来回一次（正向播完自动倒放回开头，连续无需再次点击）；<br>· <b>动画结束后删除该物体</b>：动画（来回）播放完毕后，该物体从场景中消失，不可再点击；<br>· <b>设为结束物体</b>：在联动剧情工具里召唤该 3D 界面后，点击此物体即结束 3D 界面、继续剧情（可设置多个）。<br>音效在左侧「音效库」标签里导入与管理。</div>
+        <div id="interact-list"></div>
+      </div>
     </div>`;
     }
   }
@@ -462,34 +470,44 @@ async function renderModelInfo() {
   }).join('');
   html += `
     <div class="panel-section">
-      <h4>${t('环境')}</h4>
-      <div class="kv-row"><span class="k">${t('环境贴图')}</span>
-        <select id="env-select" class="info-select" title="${t('选 HDRI 作为该模型的照明环境')}">
-          ${envOptions}
-        </select>
+      <h4 class="collapse-toggle" data-body="env-body" style="cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;margin-bottom:${envExpanded ? '8px' : '0'}" title="${t('点击展开 / 收起环境设置')}">
+        <span class="collapse-arrow" style="display:inline-block;font-size:10px;line-height:1;color:var(--txt-2)">${envExpanded ? '▾' : '▸'}</span>
+        ${t('环境设置')}
+      </h4>
+      <div class="collapse-body" id="env-body" ${envExpanded ? '' : 'hidden'}>
+        <div class="kv-row"><span class="k">${t('环境贴图')}</span>
+          <select id="env-select" class="info-select" title="${t('选 HDRI 作为该模型的照明环境')}">
+            ${envOptions}
+          </select>
+        </div>
+        <div class="kv-row" style="align-items:center;gap:10px">
+          <span class="k" style="white-space:nowrap">${t('曝光')}</span>
+          <input type="range" id="env-exposure" min="0.1" max="3" step="0.05" value="${envExp}" style="flex:1">
+          <span class="v" id="env-exposure-val" style="min-width:36px;text-align:right">${envExp.toFixed(2)}</span>
+        </div>
+        <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('用 HDRI 环境贴图替代默认灯光做照明；拖动曝光调整明暗。')}</div>
       </div>
-      <div class="kv-row" style="align-items:center;gap:10px">
-        <span class="k" style="white-space:nowrap">${t('曝光')}</span>
-        <input type="range" id="env-exposure" min="0.1" max="3" step="0.05" value="${envExp}" style="flex:1">
-        <span class="v" id="env-exposure-val" style="min-width:36px;text-align:right">${envExp.toFixed(2)}</span>
-      </div>
-      <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('用 HDRI 环境贴图替代默认灯光做照明；拖动曝光调整明暗。')}</div>
     </div>`;
 
-  // 视图设置：关闭手动旋转（仅影响导出成品，不影响编辑器内编辑）
+  // 游戏中旋转设置：关闭手动旋转（仅影响导出成品，不影响编辑器内编辑）
   html += `
     <div class="panel-section">
-      <h4>${t('视图设置')}</h4>
-      <label class="switch-row" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--txt-1);margin-top:6px">
-        <input type="checkbox" id="ch-lock-rotation" ${n.lockRotation ? 'checked' : ''}>
-        <span>${t('关闭手动旋转')}</span>
-      </label>
-      <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('勾选后，导出的成品（独立查看器 / 剧情编辑器中的 3D 界面）将禁止手动旋转，固定在默认视角上。')}</div>
+      <h4 class="collapse-toggle" data-body="rotation-body" style="cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;margin-bottom:${rotationExpanded ? '8px' : '0'}" title="${t('点击展开 / 收起游戏中旋转设置')}">
+        <span class="collapse-arrow" style="display:inline-block;font-size:10px;line-height:1;color:var(--txt-2)">${rotationExpanded ? '▾' : '▸'}</span>
+        ${t('游戏中旋转设置')}
+      </h4>
+      <div class="collapse-body" id="rotation-body" ${rotationExpanded ? '' : 'hidden'}>
+        <label class="switch-row" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--txt-1);margin-top:6px">
+          <input type="checkbox" id="ch-lock-rotation" ${n.lockRotation ? 'checked' : ''}>
+          <span>${t('关闭手动旋转')}</span>
+        </label>
+        <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('勾选后，导出的成品（独立查看器 / 剧情编辑器中的 3D 界面）将禁止手动旋转，固定在默认视角上。')}</div>
+      </div>
     </div>`;
 
   dom.infoContent.innerHTML = html;
 
-  // 折叠区块：点击标题展开 / 收起（基本信息 / 几何信息）
+  // 折叠区块：点击标题展开 / 收起（基本信息 / 几何信息 / 点击交互配置 / 环境设置 / 游戏中旋转设置）
   const bindToggle = (bodyId, flagRef) => {
     const toggle = dom.infoContent.querySelector('.collapse-toggle[data-body="' + bodyId + '"]');
     const body = document.getElementById(bodyId);
@@ -505,6 +523,9 @@ async function renderModelInfo() {
   };
   bindToggle('basic-info-body', { get v() { return basicInfoExpanded; }, set v(x) { basicInfoExpanded = x; } });
   bindToggle('geo-info-body', { get v() { return geoInfoExpanded; }, set v(x) { geoInfoExpanded = x; } });
+  bindToggle('interact-body', { get v() { return interactExpanded; }, set v(x) { interactExpanded = x; } });
+  bindToggle('env-body', { get v() { return envExpanded; }, set v(x) { envExpanded = x; } });
+  bindToggle('rotation-body', { get v() { return rotationExpanded; }, set v(x) { rotationExpanded = x; } });
 
   // 基本信息「名称」就地编辑：回车 / 失焦生效
   const nameInput = $('info-name-input');
@@ -530,7 +551,7 @@ async function renderModelInfo() {
     });
   }
 
-  // 视图设置：「关闭手动旋转」开关（写入节点，导出成品时生效）
+  // 游戏中旋转设置：「关闭手动旋转」开关（写入节点，导出成品时生效）
   const lockCh = $('ch-lock-rotation');
   if (lockCh) {
     lockCh.addEventListener('change', () => {

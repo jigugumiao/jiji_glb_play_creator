@@ -63,6 +63,9 @@
       '几何信息': 'Geometry',
       '点击展开 / 收起基本信息': 'Click to expand / collapse basic info',
       '点击展开 / 收起几何信息': 'Click to expand / collapse geometry',
+      '点击展开 / 收起点击交互配置': 'Click to expand / collapse Click Interaction',
+      '点击展开 / 收起环境设置': 'Click to expand / collapse Environment Settings',
+      '点击展开 / 收起游戏中旋转设置': 'Click to expand / collapse In-Game Rotation Settings',
       '名称': 'Name',
       '类型': 'Type',
       'GLB 模型': 'GLB Model',
@@ -77,6 +80,7 @@
       '材质数': 'Materials',
       '点击交互配置': 'Click Interaction',
       '视图设置': 'View Settings',
+      '游戏中旋转设置': 'In-Game Rotation Settings',
       '关闭手动旋转': 'Disable Manual Rotation',
       '勾选后，导出的成品（独立查看器 / 剧情编辑器中的 3D 界面）将禁止手动旋转，固定在默认视角上。': 'When enabled, the exported viewer (standalone / 3D in Story Editor) locks manual rotation, fixing it to the default view.',
       '该模型没有可识别的部位网格。': 'This model has no recognizable part meshes.',
@@ -301,6 +305,7 @@
 
       // 环境（HDRI）面板
       '环境': 'Environment',
+      '环境设置': 'Environment Settings',
       '环境贴图': 'Environment Map',
       '曝光': 'Exposure',
       '用 HDRI 环境贴图替代默认灯光做照明；拖动曝光调整明暗。': 'Use an HDRI environment map instead of default lights for illumination; drag Exposure to adjust brightness.',
