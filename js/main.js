@@ -488,7 +488,7 @@ async function renderModelInfo() {
       </div>
     </div>`;
 
-  // 游戏中旋转设置：关闭手动旋转（仅影响导出成品，不影响编辑器内编辑）
+  // 游戏中旋转设置：游戏时禁用手动旋转（仅影响导出成品，不影响编辑器内编辑）
   html += `
     <div class="panel-section">
       <h4 class="collapse-toggle" data-body="rotation-body" style="cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;margin-bottom:${rotationExpanded ? '8px' : '0'}" title="${t('点击展开 / 收起游戏中旋转设置')}">
@@ -498,7 +498,7 @@ async function renderModelInfo() {
       <div class="collapse-body" id="rotation-body" ${rotationExpanded ? '' : 'hidden'}>
         <label class="switch-row" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--txt-1);margin-top:6px">
           <input type="checkbox" id="ch-lock-rotation" ${n.lockRotation ? 'checked' : ''}>
-          <span>${t('关闭手动旋转')}</span>
+          <span>${t('游戏时禁用手动旋转')}</span>
         </label>
         <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('勾选后，导出的成品（独立查看器 / 剧情编辑器中的 3D 界面）将禁止手动旋转，固定在默认视角上。')}</div>
       </div>
@@ -550,13 +550,13 @@ async function renderModelInfo() {
     });
   }
 
-  // 游戏中旋转设置：「关闭手动旋转」开关（写入节点，导出成品时生效）
+  // 游戏中旋转设置：「游戏时禁用手动旋转」开关（写入节点，导出成品时生效）
   const lockCh = $('ch-lock-rotation');
   if (lockCh) {
     lockCh.addEventListener('change', () => {
       DB.setLockRotation(id, lockCh.checked);
       markSaved();
-      toast(lockCh.checked ? '已开启「关闭手动旋转」：导出成品将固定在默认视角' : '已关闭「关闭手动旋转」');
+      toast(lockCh.checked ? '已开启「游戏时禁用手动旋转」：导出成品将固定在默认视角' : '已关闭「游戏时禁用手动旋转」');
     });
   }
 

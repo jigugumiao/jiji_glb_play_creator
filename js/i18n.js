@@ -82,7 +82,7 @@
       '点击交互配置': 'Click Interaction',
       '视图设置': 'View Settings',
       '游戏中旋转设置': 'In-Game Rotation Settings',
-      '关闭手动旋转': 'Disable Manual Rotation',
+      '游戏时禁用手动旋转': 'Disable Manual Rotation During Gameplay',
       '勾选后，导出的成品（独立查看器 / 剧情编辑器中的 3D 界面）将禁止手动旋转，固定在默认视角上。': 'When enabled, the exported viewer (standalone / 3D in Story Editor) locks manual rotation, fixing it to the default view.',
       '该模型没有可识别的物体网格。': 'This model has no recognizable object meshes.',
 
