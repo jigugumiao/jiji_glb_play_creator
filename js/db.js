@@ -710,6 +710,16 @@ function setRootDescription(desc) {
   saveTree();
 }
 
+// 全局镜头设置（场景级，随项目保存）：目前主要存场视角 fov
+function getCameraSettings() {
+  return (_tree && _tree.camera) ? Object.assign({ fov: 50 }, _tree.camera) : { fov: 50 };
+}
+function setCameraSettings(partial) {
+  if (!_tree) return;
+  _tree.camera = Object.assign({}, _tree.camera, partial);
+  saveTree();
+}
+
 function moveNode(id, newParentId) {
   const n = _tree.nodes[id];
   if (!n) return;
@@ -970,6 +980,7 @@ window.DB = {
   getNode, getPath, getPathNames, getChildren,
   addNode, removeNode, renameNode, moveNode,
   updateDescription, getRootDescription, setRootDescription,
+  getCameraSettings, setCameraSettings,
   setDefaultView,
   setLockRotation,
   setEnvMap, setEnvExposure,

@@ -38,7 +38,6 @@ const dom = {
   statStorage: $('stat-storage'),
   statStatus: $('stat-status'),
   tabProps: $('tab-props'),
-  tabSounds: $('tab-sounds'),
   soundsContent: $('sounds-content'),
   infoContent: $('info-content'),
   folderContent: $('folder-content'),
@@ -1268,6 +1267,51 @@ async function renderSoundsLibrary() {
   });
 }
 
+// ============ 全局信息（右侧常驻分类）：镜头参数 ============
+// 焦距 / 场视角相互换算（以 35mm 全画幅、传感器高 24mm 为基准）
+function fovToFocal(fov) { return 12 / Math.tan((fov / 2) * Math.PI / 180); }
+function focalToFov(f) { return 2 * Math.atan(12 / f) * 180 / Math.PI; }
+
+let _globalInfoBound = false;
+function initGlobalInfo() {
+  const fovInput = document.getElementById('cam-fov');
+  const focalInput = document.getElementById('cam-focal');
+  if (!fovInput || !focalInput) return;
+  const clampFov = (v) => Math.max(10, Math.min(120, v));
+  const clampFocal = (v) => Math.max(6, Math.min(70, v));
+  const syncInputs = (fov) => {
+    fovInput.value = Math.round(fov);
+    focalInput.value = Math.round(fovToFocal(fov));
+  };
+  if (!_globalInfoBound) {
+    _globalInfoBound = true;
+    // 折叠展开 / 收起
+    const toggle = document.querySelector('#global-info .collapse-toggle');
+    const body = document.getElementById('global-info-body');
+    if (toggle && body) {
+      toggle.addEventListener('click', () => {
+        body.hidden = !body.hidden;
+        const arr = toggle.querySelector('.collapse-arrow');
+        if (arr) arr.textContent = body.hidden ? '▸' : '▾';
+      });
+    }
+    const apply = (fov) => {
+      fov = clampFov(+fov || 50);
+      if (viewer) viewer.setFov(fov);
+      DB.setCameraSettings({ fov });
+      markSaved();
+      syncInputs(fov);
+    };
+    fovInput.addEventListener('input', () => apply(+fovInput.value));
+    focalInput.addEventListener('input', () => apply(focalToFov(clampFocal(+focalInput.value))));
+  }
+  // 每次打开项目都按存储值同步（首次也会执行）
+  const s = DB.getCameraSettings();
+  const fov = (typeof s.fov === 'number') ? clampFov(s.fov) : 50;
+  if (viewer) viewer.setFov(fov);
+  syncInputs(fov);
+}
+
 // ============ 状态栏 ============
 async function updateStatusBar() {
   const tree = DB.loadTree();
@@ -1358,9 +1402,7 @@ function switchTab(name) {
     t.classList.toggle('active', t.dataset.tab === name);
   });
   dom.tabProps.classList.toggle('hidden', name !== 'props');
-  dom.tabSounds.classList.toggle('hidden', name !== 'sounds');
-  if (name === 'sounds') renderSoundsLibrary();
-  else renderProps();
+  renderProps();
 }
 
 // ============ 操作：CRUD ============
@@ -1593,7 +1635,7 @@ async function importAudioFiles(files) {
   if (imported > 0) {
     toast(`已导入 ${imported} 个音效`, 'success');
     if (state.selectedModelId) await renderModelInfo();            // 刷新音效下拉
-    if (state.activeTab === 'sounds') await renderSoundsLibrary(); // 刷新音效库列表
+    await renderSoundsLibrary(); // 刷新左侧资源栏的音效库列表
     viewer.setSounds(await DB.getAllSoundData());                  // 编辑器预览立即可用新音效
   }
   return imported;
@@ -2490,6 +2532,7 @@ async function ensureViewer() {
 // 打开某个项目，进入主界面
 async function openProject(id) {
   await ensureViewer();
+  initGlobalInfo(); // 按项目存储的镜头设置同步右侧「全局信息」与预览相机
   DB.setCurrentProject(id);
   state.currentProjectId = id;
   // 诊断：输出当前项目树概况

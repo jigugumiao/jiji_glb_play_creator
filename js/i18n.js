@@ -306,6 +306,11 @@
       // 环境（HDRI）面板
       '环境': 'Environment',
       '环境设置': 'Environment Settings',
+      '全局信息': 'Global Info',
+      '场视角（垂直）': 'Field of View (vertical)',
+      '焦距（35mm 等效）': 'Focal Length (35mm eq.)',
+      '调整焦距 / 场视角会改变预览镜头：广角更扁、长焦更压缩画面。': 'Adjusting focal length / FOV changes the preview lens: wide-angle flattens, telephoto compresses.',
+      '点击展开 / 收起全局信息': 'Click to expand / collapse Global Info',
       '环境贴图': 'Environment Map',
       '曝光': 'Exposure',
       '用 HDRI 环境贴图替代默认灯光做照明；拖动曝光调整明暗。': 'Use an HDRI environment map instead of default lights for illumination; drag Exposure to adjust brightness.',

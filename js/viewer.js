@@ -383,6 +383,18 @@ class GLBViewer {
     this._defaultView = (view && view.pos && view.target) ? view : null;
   }
 
+  // 全局镜头：调整场视角（垂直 FOV，度）。改 fov 即时改变预览"镜头"，不影响相机位置
+  setFov(fov) {
+    if (!this.camera) return;
+    const v = Math.max(10, Math.min(120, fov));
+    this.camera.fov = v;
+    this.camera.updateProjectionMatrix();
+  }
+
+  getFov() {
+    return this.camera ? this.camera.fov : 50;
+  }
+
   // 从原生 Blob 加载（内部存储已为 Blob：省去 base64 解码，内存峰值更低）
   async loadFromBlob(blob, defaultView, onProgress) {
     this.clear();
