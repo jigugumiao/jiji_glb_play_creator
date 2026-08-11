@@ -321,9 +321,17 @@
       '环境旋转已更新': 'Environment rotation updated',
       '景深': 'Depth of Field',
       '对焦距离': 'Focus Distance',
+      '对焦物体': 'Focus Object',
+      '选取对焦物体': 'Pick Focus Object',
+      '吸色器选取对焦物体（点击 3D 预览里的物体）': 'Use the eyedropper to pick a focus object (click an object in the 3D preview)',
+      '已选取对焦物体': 'Focus object selected',
+      '清除对焦物体': 'Clear focus object',
+      '未选取对焦物体（默认对焦画面中心）': 'No focus object — focuses screen center by default',
+      '未选取对焦物体（已取消）': 'No object picked — cancelled',
+      '对焦物体已更新': 'Focus object updated',
       '光圈': 'Aperture',
       '最大模糊': 'Max Blur',
-      '模拟相机景深：对焦距离以外的物体会虚化，营造电影感与空间层次。': 'Simulates camera depth of field: objects outside the focus distance blur, adding a cinematic sense of depth.',
+      '模拟相机景深：点「选取对焦物体」用吸色器在 3D 预览里点选一个物体，对焦距离会随镜头位置自动跟随该物体；未选取时默认对焦画面中心。': 'Simulates camera depth of field: click "Pick Focus Object" then click any object in the 3D preview — the focus distance auto-follows that object as the camera moves; with no object picked it focuses the screen center by default.',
       '已开启景深': 'Depth of field enabled',
       '已关闭景深': 'Depth of field disabled'
     }

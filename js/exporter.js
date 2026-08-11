@@ -57,8 +57,10 @@ const camera = new THREE.PerspectiveCamera(FOV, container.clientWidth / containe
 camera.position.set(3, 2, 5);
 
 // 景深（Bokeh）后处理：默认关闭，开启时走 EffectComposer + BokehPass
-const DOF = __DOF__;   // { enabled, focus, aperture, maxblur }
+const DOF = __DOF__;   // { enabled, focusObject, aperture, maxblur }
 let _composer = null, _bokehPass = null;
+let _dofFocusObj = null;                 // 对焦物体（按名称查找）；null 时默认对焦画面中心
+const _dofTmp = new THREE.Vector3();
 function ensureComposer() {
   if (_composer) return;
   const w = container.clientWidth || 1, h = container.clientHeight || 1;
@@ -67,7 +69,6 @@ function ensureComposer() {
   _bokehPass = new BokehPass(scene, camera, { focus: 10, aperture: 0.025, maxblur: 0.01, width: w, height: h });
   _composer.addPass(_bokehPass);
   if (DOF && DOF.enabled) {
-    if (typeof DOF.focus === 'number') _bokehPass.uniforms['focus'].value = DOF.focus;
     if (typeof DOF.aperture === 'number') _bokehPass.uniforms['aperture'].value = DOF.aperture;
     if (typeof DOF.maxblur === 'number') _bokehPass.uniforms['maxblur'].value = DOF.maxblur;
     _bokehPass.enabled = true;
@@ -333,6 +334,8 @@ function loadModel() {
     (gltf) => {
       currentModel = gltf.scene;
       scene.add(currentModel);
+      // 景深：按名称解析对焦物体（与编辑器吸色器所选一致）
+      _dofFocusObj = (DOF && DOF.focusObject && currentModel) ? currentModel.getObjectByName(DOF.focusObject) : null;
 
       // 提取动画
       if (gltf.animations && gltf.animations.length > 0) {
@@ -643,7 +646,17 @@ function animate(time) {
   }
 
   controls.update();
-  if (_dofEnabled) { ensureComposer(); _composer.render(); }
+  if (_dofEnabled) {
+    // 每帧按相机位置更新对焦距离：跟随对焦物体（无则对焦画面中心）
+    if (_bokehPass) {
+      let focus;
+      if (_dofFocusObj) { _dofFocusObj.getWorldPosition(_dofTmp); focus = camera.position.distanceTo(_dofTmp); }
+      else { focus = camera.position.distanceTo(controls.target); }
+      _bokehPass.uniforms['focus'].value = focus;
+    }
+    ensureComposer();
+    _composer.render();
+  }
   else { renderer.render(scene, camera); }
 }
 animate();
@@ -691,13 +704,13 @@ function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions,
   var envKey = envMap || (window.HDRI_DEFAULT) || 'urban';
   var envExp = (typeof envExposure === 'number') ? envExposure : 1.0;
   var envRot = (typeof envRotation === 'number') ? envRotation : 0;
-  // 景深（Bokeh）：与编辑器「环境设置」里的景深开关及参数一致
+  // 景深（Bokeh）：与编辑器「环境设置」里的景深开关及参数一致；对焦物体按名称继承，运行时随镜头位置自动跟随
   var dofVal = (dof && typeof dof === 'object') ? {
     enabled: !!dof.enabled,
-    focus: (typeof dof.focus === 'number') ? dof.focus : 10,
+    focusObject: (typeof dof.focusObject === 'string' && dof.focusObject) ? dof.focusObject : null,
     aperture: (typeof dof.aperture === 'number') ? dof.aperture : 0.025,
     maxblur: (typeof dof.maxblur === 'number') ? dof.maxblur : 0.01
-  } : { enabled: false, focus: 10, aperture: 0.025, maxblur: 0.01 };
+  } : { enabled: false, focusObject: null, aperture: 0.025, maxblur: 0.01 };
   // 场视角：与编辑器「全局信息」镜头参数一致；超出 10~120 范围时回落到 50
   var fovVal = (typeof fov === 'number' && isFinite(fov)) ? Math.max(10, Math.min(120, fov)) : 50;
   var _opt = (window.HDRI_MAP && window.HDRI_MAP[envKey]) || { key: envKey, type: 'hdr' };

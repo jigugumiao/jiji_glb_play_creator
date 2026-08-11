@@ -706,7 +706,8 @@ function setEnvRotation(id, val) {
   n.envRotation = (typeof val === 'number' && isFinite(val)) ? val : 0;
   saveTree();
 }
-// 景深（Bokeh）设置：node.dof = { enabled, focus, aperture, maxblur }
+// 景深（Bokeh）设置：node.dof = { enabled, focusObject, aperture, maxblur }
+//   focusObject: 对焦物体名称（字符串）或 null；null 时运行时对焦画面中心，对焦距离随镜头位置自动跟随
 function getDof(id) {
   const n = _tree.nodes[id];
   return (n && n.dof) ? n.dof : null;

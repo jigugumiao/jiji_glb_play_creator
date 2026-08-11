@@ -465,7 +465,7 @@ async function renderModelInfo() {
   const envRotDeg = Math.round(((typeof n.envRotation === 'number' ? n.envRotation : 0) * 180 / Math.PI));
   const dof = n.dof || {};
   const dofOn = !!dof.enabled;
-  const dofFocus = (typeof dof.focus === 'number') ? dof.focus : 10;
+  let dofFocusObjName = (typeof dof.focusObject === 'string' && dof.focusObject) ? dof.focusObject : null;
   const dofAperture = (typeof dof.aperture === 'number') ? dof.aperture : 0.025;
   const dofMaxblur = (typeof dof.maxblur === 'number') ? dof.maxblur : 0.01;
   const envLang = (window.getLang && window.getLang() === 'en') ? 'en' : 'zh';
@@ -504,9 +504,9 @@ async function renderModelInfo() {
         </div>
         <div id="dof-sliders" ${dofOn ? '' : 'hidden'}>
           <div class="kv-row" style="align-items:center;gap:10px;margin-top:8px">
-            <span class="k" style="white-space:nowrap">${t('对焦距离')}</span>
-            <input type="range" id="dof-focus" min="0.5" max="100" step="0.5" value="${dofFocus}" style="flex:1">
-            <span class="v" id="dof-focus-val" style="min-width:40px;text-align:right">${dofFocus}</span>
+            <button type="button" id="dof-pick" class="info-select" title="${t('吸色器选取对焦物体（点击 3D 预览里的物体）')}" style="flex:0 0 auto;cursor:pointer">${t('选取对焦物体')}</button>
+            <span id="dof-focus-obj" class="v" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8b93a3">${dofFocusObjName ? dofFocusObjName : t('未选取对焦物体（默认对焦画面中心）')}</span>
+            <button type="button" id="dof-clear" class="info-select" title="${t('清除对焦物体')}" ${dofFocusObjName ? '' : 'disabled'} style="flex:0 0 auto;cursor:${dofFocusObjName ? 'pointer' : 'default'}">${t('清除对焦物体')}</button>
           </div>
           <div class="kv-row" style="align-items:center;gap:10px;margin-top:6px">
             <span class="k" style="white-space:nowrap">${t('光圈')}</span>
@@ -518,7 +518,7 @@ async function renderModelInfo() {
             <input type="range" id="dof-maxblur" min="0" max="0.03" step="0.001" value="${dofMaxblur}" style="flex:1">
             <span class="v" id="dof-maxblur-val" style="min-width:36px;text-align:right">${dofMaxblur.toFixed(3)}</span>
           </div>
-          <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('模拟相机景深：对焦距离以外的物体会虚化，营造电影感与空间层次。')}</div>
+          <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('模拟相机景深：点「选取对焦物体」用吸色器在 3D 预览里点选一个物体，对焦距离会随镜头位置自动跟随该物体；未选取时默认对焦画面中心。')}</div>
         </div>
       </div>
     </div>`;
@@ -634,16 +634,18 @@ async function renderModelInfo() {
     rotSlider.addEventListener('input', onRot);
     rotSlider.addEventListener('change', () => toast(t('环境旋转已更新')));
   }
-  // 环境：景深（Bokeh）开关与滑块（实时更新预览并写入节点，导出成品继承）
+  // 环境：景深（Bokeh）开关、对焦物体（吸色器点选）、光圈、最大模糊
   const dofEnable = $('dof-enable');
   const dofSliders = $('dof-sliders');
-  const dofFocusEl = $('dof-focus'), dofFocusValEl = $('dof-focus-val');
+  const dofPickBtn = $('dof-pick');
+  const dofFocusObjEl = $('dof-focus-obj');
+  const dofClearBtn = $('dof-clear');
   const dofApertureEl = $('dof-aperture'), dofApertureValEl = $('dof-aperture-val');
   const dofMaxblurEl = $('dof-maxblur'), dofMaxblurValEl = $('dof-maxblur-val');
   const writeDof = (enabled) => {
     const d = {
       enabled: !!enabled,
-      focus: dofFocusEl ? parseFloat(dofFocusEl.value) : 10,
+      focusObject: (typeof dofFocusObjName === 'string' && dofFocusObjName) ? dofFocusObjName : null,
       aperture: dofApertureEl ? parseFloat(dofApertureEl.value) : 0.025,
       maxblur: dofMaxblurEl ? parseFloat(dofMaxblurEl.value) : 0.01
     };
@@ -651,6 +653,13 @@ async function renderModelInfo() {
     viewer.setDof(n);   // n 已就地更新 dof
     markSaved();
     return d;
+  };
+  const refreshFocusObjUI = () => {
+    if (dofFocusObjEl) dofFocusObjEl.textContent = dofFocusObjName ? dofFocusObjName : t('未选取对焦物体（默认对焦画面中心）');
+    if (dofClearBtn) {
+      dofClearBtn.disabled = !dofFocusObjName;
+      dofClearBtn.style.cursor = dofFocusObjName ? 'pointer' : 'default';
+    }
   };
   if (dofEnable) {
     dofEnable.addEventListener('change', () => {
@@ -660,6 +669,26 @@ async function renderModelInfo() {
       toast(on ? t('已开启景深') : t('已关闭景深'));
     });
   }
+  if (dofPickBtn) {
+    dofPickBtn.addEventListener('click', () => {
+      viewer.startFocusPick((name) => {
+        if (!name) { toast(t('未选取对焦物体（已取消）')); return; }
+        dofFocusObjName = name;
+        refreshFocusObjUI();
+        writeDof(dofEnable ? dofEnable.checked : false);
+        toast(t('已选取对焦物体') + '：' + name);
+      });
+    });
+  }
+  if (dofClearBtn) {
+    dofClearBtn.addEventListener('click', () => {
+      if (!dofFocusObjName) return;
+      dofFocusObjName = null;
+      refreshFocusObjUI();
+      writeDof(dofEnable ? dofEnable.checked : false);
+      toast(t('已清除对焦物体'));
+    });
+  }
   const bindDofSlider = (slider, valEl, fmt) => {
     if (!slider) return;
     slider.addEventListener('input', () => {
@@ -667,7 +696,6 @@ async function renderModelInfo() {
       writeDof(dofEnable ? dofEnable.checked : false);
     });
   };
-  bindDofSlider(dofFocusEl, dofFocusValEl, (v) => String(v));
   bindDofSlider(dofApertureEl, dofApertureValEl, (v) => v.toFixed(3));
   bindDofSlider(dofMaxblurEl, dofMaxblurValEl, (v) => v.toFixed(3));
   // 打开节点时按已存设置应用一次景深

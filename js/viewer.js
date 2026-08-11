@@ -109,6 +109,13 @@ class GLBViewer {
     this._dofEnabled = false;
     this._composer = null;
     this._bokehPass = null;
+    // 对焦物体（吸色器点选）：名称（可能为空 => 默认对焦画面中心）；运行时每帧据相机位置更新对焦距离
+    this._dofFocusObjectName = null;
+    // 吸色器拾取状态
+    this._focusPickMode = false;
+    this._onFocusPick = null;
+    this._prevCursor = '';
+    this._tmpVec3 = new THREE.Vector3();
   }
 
   _initLights() {
@@ -391,10 +398,29 @@ class GLBViewer {
     }
 
     this.controls.update();
-    if (this._dofEnabled && this._composer) {
+    if (this._dofEnabled) {
+      this._updateDofFocus();
       this._composer.render();
     } else {
       this.renderer.render(this.scene, this.camera);
+    }
+  }
+
+  // 进入吸色器拾取模式：下一次在 3D 预览上点击时，射线命中物体并取（命名祖先的）名称回调给 cb
+  startFocusPick(cb) {
+    if (!this.currentModel || !this.renderer) { if (cb) cb(null); return; }
+    this._focusPickMode = true;
+    this._onFocusPick = (typeof cb === 'function') ? cb : null;
+    const el = this.renderer.domElement;
+    this._prevCursor = el.style.cursor;
+    el.style.cursor = 'crosshair';
+  }
+
+  _endFocusPick() {
+    this._focusPickMode = false;
+    this._onFocusPick = null;
+    if (this.renderer && this.renderer.domElement) {
+      this.renderer.domElement.style.cursor = this._prevCursor || '';
     }
   }
 
@@ -506,15 +532,16 @@ class GLBViewer {
     this._bokehPass = bokeh;
   }
 
-  // 应用景深设置（node.dof = { enabled, focus, aperture, maxblur }）；关闭时退回普通渲染
+  // 应用景深设置（node.dof = { enabled, focusObject, aperture, maxblur }）；关闭时退回普通渲染
+  // focusObject 为物体名称（字符串）或 null：运行时每帧按相机到该物体（或画面中心）的距离动态算对焦距离
   setDof(node) {
     const d = (node && node.dof) || {};
     const enabled = !!d.enabled;
+    this._dofFocusObjectName = (enabled && typeof d.focusObject === 'string' && d.focusObject) ? d.focusObject : null;
     if (enabled) {
       this._ensureComposer();
       const b = this._bokehPass;
       if (b) {
-        if (typeof d.focus === 'number') b.uniforms['focus'].value = d.focus;
         if (typeof d.aperture === 'number') b.uniforms['aperture'].value = d.aperture;
         if (typeof d.maxblur === 'number') b.uniforms['maxblur'].value = d.maxblur;
         if (b.uniforms['aspect']) b.uniforms['aspect'].value = this.camera.aspect;
@@ -525,6 +552,24 @@ class GLBViewer {
       this._dofEnabled = false;
       if (this._bokehPass) this._bokehPass.enabled = false;
     }
+  }
+
+  // 每帧更新对焦距离：相机位置自动跟随对焦物体（无物体则对焦轨道中心）
+  _updateDofFocus() {
+    if (!this._bokehPass) return;
+    let focus;
+    const name = this._dofFocusObjectName;
+    if (name && this.currentModel) {
+      const obj = this.currentModel.getObjectByName(name);
+      if (obj) {
+        obj.getWorldPosition(this._tmpVec3);
+        focus = this.camera.position.distanceTo(this._tmpVec3);
+      }
+    }
+    if (focus === undefined) {
+      focus = this.camera.position.distanceTo(this.controls.target);
+    }
+    this._bokehPass.uniforms['focus'].value = focus;
   }
 
   // 从原生 Blob 加载（内部存储已为 Blob：省去 base64 解码，内存峰值更低）
@@ -986,6 +1031,24 @@ class GLBViewer {
       this._downY = e.clientY;
     });
     el.addEventListener('pointerup', (e) => {
+      if (this._focusPickMode) {
+        const rect = el.getBoundingClientRect();
+        this._pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        this._pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        this._raycaster.setFromCamera(this._pointer, this.camera);
+        const hits = this._raycaster.intersectObject(this.currentModel, true);
+        let name = null;
+        if (hits.length) {
+          // 命中的可能是无名子网格，向上找第一个有名字的祖先作为对焦物体标识
+          let o = hits[0].object;
+          while (o && !o.name) o = o.parent;
+          name = (o && o.name) ? o.name : null;
+        }
+        const cb = this._onFocusPick;
+        this._endFocusPick();
+        if (cb) cb(name);
+        return; // 拾取点击不触发交互
+      }
       if (!this.currentModel) return;
       const dx = e.clientX - this._downX;
       const dy = e.clientY - this._downY;
