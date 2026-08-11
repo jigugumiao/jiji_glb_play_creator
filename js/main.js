@@ -463,6 +463,11 @@ async function renderModelInfo() {
   const envKey = n.envMap || window.HDRI_DEFAULT;
   const envExp = (typeof n.envExposure === 'number') ? n.envExposure : 1.0;
   const envRotDeg = Math.round(((typeof n.envRotation === 'number' ? n.envRotation : 0) * 180 / Math.PI));
+  const dof = n.dof || {};
+  const dofOn = !!dof.enabled;
+  const dofFocus = (typeof dof.focus === 'number') ? dof.focus : 10;
+  const dofAperture = (typeof dof.aperture === 'number') ? dof.aperture : 0.025;
+  const dofMaxblur = (typeof dof.maxblur === 'number') ? dof.maxblur : 0.01;
   const envLang = (window.getLang && window.getLang() === 'en') ? 'en' : 'zh';
   const envOptions = window.HDRI_OPTIONS.map(o => {
     const label = envLang === 'en' ? (o.en || o.label) : o.label;
@@ -491,6 +496,30 @@ async function renderModelInfo() {
           <span class="v" id="env-rotation-val" style="min-width:42px;text-align:right">${envRotDeg}°</span>
         </div>
         <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('用 HDRI 环境贴图替代默认灯光做照明；拖动曝光调整明暗，拖动旋转可环绕 360° 改变环境朝向。')}</div>
+        <div class="kv-row" style="align-items:center;gap:10px;margin-top:10px">
+          <label class="switch-row" style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt-1)">
+            <input type="checkbox" id="dof-enable" ${dofOn ? 'checked' : ''}>
+            <span>${t('景深')}</span>
+          </label>
+        </div>
+        <div id="dof-sliders" ${dofOn ? '' : 'hidden'}>
+          <div class="kv-row" style="align-items:center;gap:10px;margin-top:8px">
+            <span class="k" style="white-space:nowrap">${t('对焦距离')}</span>
+            <input type="range" id="dof-focus" min="0.5" max="100" step="0.5" value="${dofFocus}" style="flex:1">
+            <span class="v" id="dof-focus-val" style="min-width:40px;text-align:right">${dofFocus}</span>
+          </div>
+          <div class="kv-row" style="align-items:center;gap:10px;margin-top:6px">
+            <span class="k" style="white-space:nowrap">${t('光圈')}</span>
+            <input type="range" id="dof-aperture" min="0" max="0.1" step="0.001" value="${dofAperture}" style="flex:1">
+            <span class="v" id="dof-aperture-val" style="min-width:48px;text-align:right">${dofAperture.toFixed(3)}</span>
+          </div>
+          <div class="kv-row" style="align-items:center;gap:10px;margin-top:6px">
+            <span class="k" style="white-space:nowrap">${t('最大模糊')}</span>
+            <input type="range" id="dof-maxblur" min="0" max="0.03" step="0.001" value="${dofMaxblur}" style="flex:1">
+            <span class="v" id="dof-maxblur-val" style="min-width:36px;text-align:right">${dofMaxblur.toFixed(3)}</span>
+          </div>
+          <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('模拟相机景深：对焦距离以外的物体会虚化，营造电影感与空间层次。')}</div>
+        </div>
       </div>
     </div>`;
 
@@ -605,6 +634,44 @@ async function renderModelInfo() {
     rotSlider.addEventListener('input', onRot);
     rotSlider.addEventListener('change', () => toast(t('环境旋转已更新')));
   }
+  // 环境：景深（Bokeh）开关与滑块（实时更新预览并写入节点，导出成品继承）
+  const dofEnable = $('dof-enable');
+  const dofSliders = $('dof-sliders');
+  const dofFocusEl = $('dof-focus'), dofFocusValEl = $('dof-focus-val');
+  const dofApertureEl = $('dof-aperture'), dofApertureValEl = $('dof-aperture-val');
+  const dofMaxblurEl = $('dof-maxblur'), dofMaxblurValEl = $('dof-maxblur-val');
+  const writeDof = (enabled) => {
+    const d = {
+      enabled: !!enabled,
+      focus: dofFocusEl ? parseFloat(dofFocusEl.value) : 10,
+      aperture: dofApertureEl ? parseFloat(dofApertureEl.value) : 0.025,
+      maxblur: dofMaxblurEl ? parseFloat(dofMaxblurEl.value) : 0.01
+    };
+    DB.setDof(id, d);
+    viewer.setDof(n);   // n 已就地更新 dof
+    markSaved();
+    return d;
+  };
+  if (dofEnable) {
+    dofEnable.addEventListener('change', () => {
+      const on = dofEnable.checked;
+      if (dofSliders) dofSliders.hidden = !on;
+      writeDof(on);
+      toast(on ? t('已开启景深') : t('已关闭景深'));
+    });
+  }
+  const bindDofSlider = (slider, valEl, fmt) => {
+    if (!slider) return;
+    slider.addEventListener('input', () => {
+      if (valEl) valEl.textContent = fmt(parseFloat(slider.value));
+      writeDof(dofEnable ? dofEnable.checked : false);
+    });
+  };
+  bindDofSlider(dofFocusEl, dofFocusValEl, (v) => String(v));
+  bindDofSlider(dofApertureEl, dofApertureValEl, (v) => v.toFixed(3));
+  bindDofSlider(dofMaxblurEl, dofMaxblurValEl, (v) => v.toFixed(3));
+  // 打开节点时按已存设置应用一次景深
+  viewer.setDof(n);
 
   // 点击交互配置：列出部位，下拉绑定动画 + 音效
   const listEl = $('interact-list');
@@ -2561,9 +2628,10 @@ async function ensureViewer() {
 // 打开某个项目，进入主界面
 async function openProject(id) {
   await ensureViewer();
-  initGlobalInfo(); // 按项目存储的镜头设置同步右侧「全局信息」与预览相机
   DB.setCurrentProject(id);
   state.currentProjectId = id;
+  DB.loadTree();              // 先确保 _tree 已加载本项目数据，initGlobalInfo 才能读到已保存的场视角
+  initGlobalInfo();           // 现在 getCameraSettings() 返回存储值，而非回退默认 50
   // 诊断：输出当前项目树概况
   const tree = DB.loadTree();
   console.log('[openProject] 项目id=' + id + ' 节点数=' + Object.keys(tree.nodes).length

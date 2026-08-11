@@ -706,6 +706,17 @@ function setEnvRotation(id, val) {
   n.envRotation = (typeof val === 'number' && isFinite(val)) ? val : 0;
   saveTree();
 }
+// 景深（Bokeh）设置：node.dof = { enabled, focus, aperture, maxblur }
+function getDof(id) {
+  const n = _tree.nodes[id];
+  return (n && n.dof) ? n.dof : null;
+}
+function setDof(id, dof) {
+  const n = _tree.nodes[id];
+  if (!n) return;
+  n.dof = dof;
+  saveTree();
+}
 
 function getRootDescription() {
   return _tree.rootDescription || '';
@@ -989,7 +1000,7 @@ window.DB = {
   getCameraSettings, setCameraSettings,
   setDefaultView,
   setLockRotation,
-  setEnvMap, setEnvExposure, setEnvRotation,
+  setEnvMap, setEnvExposure, setEnvRotation, setDof, getDof,
   countModels, countFolders, collectDescendantIds,
   exportProject, exportProjectById, importProject, resetAll,
   setBgSettings, getBgSettings, resolveBgSettings,

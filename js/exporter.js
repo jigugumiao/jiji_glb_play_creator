@@ -23,6 +23,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 
 // 内嵌查看器（基于 js/viewer.js 的 GLBViewer 类，精简为自包含版本）
 
@@ -52,6 +55,27 @@ scene.background = __SCENE_BG__;
 const container = document.getElementById('viewer');
 const camera = new THREE.PerspectiveCamera(FOV, container.clientWidth / container.clientHeight, 0.01, 5000);
 camera.position.set(3, 2, 5);
+
+// 景深（Bokeh）后处理：默认关闭，开启时走 EffectComposer + BokehPass
+const DOF = __DOF__;   // { enabled, focus, aperture, maxblur }
+let _composer = null, _bokehPass = null;
+function ensureComposer() {
+  if (_composer) return;
+  const w = container.clientWidth || 1, h = container.clientHeight || 1;
+  _composer = new EffectComposer(renderer);
+  _composer.addPass(new RenderPass(scene, camera));
+  _bokehPass = new BokehPass(scene, camera, { focus: 10, aperture: 0.025, maxblur: 0.01, width: w, height: h });
+  _composer.addPass(_bokehPass);
+  if (DOF && DOF.enabled) {
+    if (typeof DOF.focus === 'number') _bokehPass.uniforms['focus'].value = DOF.focus;
+    if (typeof DOF.aperture === 'number') _bokehPass.uniforms['aperture'].value = DOF.aperture;
+    if (typeof DOF.maxblur === 'number') _bokehPass.uniforms['maxblur'].value = DOF.maxblur;
+    _bokehPass.enabled = true;
+  } else {
+    _bokehPass.enabled = false;
+  }
+}
+const _dofEnabled = !!(DOF && DOF.enabled);
 
 // ============ 像素滤镜 ============
 // 思路：渲染到低分辨率 drawing buffer，再用 CSS 放大（image-rendering: pixelated）
@@ -134,6 +158,32 @@ function loadHDRIRaw(key) {
   _hdriRawCache.set(key, p);
   return p;
 }
+// 生成「按经度旋转后的等距柱状贴图」：全屏着色器把源贴图采样 uv.x 平移（水平环绕）。
+// 关键：PMREM 烘焙按方向采样、不读 texture.offset，故必须烘焙副本再喂 PMREM，否则旋转无效。
+function bakeRotatedEquirect(rawTex, offsetU) {
+  const w = rawTex.image.width, h = rawTex.image.height;
+  const rt = new THREE.WebGLRenderTarget(w, h, {
+    type: rawTex.type, format: rawTex.format,
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    wrapS: THREE.RepeatWrapping, depthBuffer: false, stencilBuffer: false
+  });
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { src: { value: rawTex }, offsetU: { value: offsetU } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: 'precision highp float; varying vec2 vUv; uniform sampler2D src; uniform float offsetU; void main(){ vec2 uv = vUv; uv.x = fract(uv.x + offsetU); gl_FragColor = texture2D(src, uv); }',
+    depthTest: false, depthWrite: false
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+  const sceneR = new THREE.Scene(); sceneR.add(quad);
+  const camR = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const prev = renderer.getRenderTarget();
+  renderer.setRenderTarget(rt);
+  renderer.render(sceneR, camR);
+  renderer.setRenderTarget(prev);
+  mat.dispose(); quad.geometry.dispose();
+  rt.texture.mapping = THREE.EquirectangularReflectionMapping;
+  return rt;
+}
 function getHDRIEnv(key, rotation) {
   const rot = (typeof rotation === 'number') ? rotation : 0;
   const q = Math.round(rot * 1000) / 1000;
@@ -141,10 +191,16 @@ function getHDRIEnv(key, rotation) {
   if (_hdriEnvCache.has(ck)) return _hdriEnvCache.get(ck);
   const p = loadHDRIRaw(key).then((raw) => {
     if (!raw) return null;
-    raw.offset.x = (q / (Math.PI * 2)) % 1;
-    raw.needsUpdate = true;
-    const rt = pmrem.fromEquirectangular(raw);
-    return rt.texture;
+    const offsetU = (q / (Math.PI * 2)) % 1;
+    let envTex;
+    if (Math.abs(offsetU) < 1e-4) {
+      envTex = pmrem.fromEquirectangular(raw).texture;
+    } else {
+      const rotated = bakeRotatedEquirect(raw, offsetU);
+      envTex = pmrem.fromEquirectangular(rotated.texture).texture;
+      rotated.dispose();
+    }
+    return envTex;
   });
   _hdriEnvCache.set(ck, p);
   return p;
@@ -521,6 +577,7 @@ window.addEventListener('resize', () => {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   resizeView();
+  if (_composer) _composer.setSize(w, h);
 });
 
 // ============ 内置简易动画（无需建模，直接绑定到部位） ============
@@ -586,7 +643,8 @@ function animate(time) {
   }
 
   controls.update();
-  renderer.render(scene, camera);
+  if (_dofEnabled) { ensureComposer(); _composer.render(); }
+  else { renderer.render(scene, camera); }
 }
 animate();
 
@@ -628,11 +686,18 @@ function collectExitMeshes(interactions) {
 // 模板：把 viewer 源码和模型元数据塞进去
 // embed/exitMeshes/modelId 用于剧情联动：embed=true 时该 HTML 被剧情编辑器 iframe 召唤，
 // 点中 exitMeshes 中任一部位会向父页面 postMessage({type:'glb-scene-exit', id, mesh}) 通知结束场景
-function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions, sounds, defaultView, embed, exitMeshes, modelId, lockRotation, chains, envMap, envExposure, envRotation, fov) {
+function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions, sounds, defaultView, embed, exitMeshes, modelId, lockRotation, chains, envMap, envExposure, envRotation, fov, dof) {
   // 该模型使用的 HDRI 环境贴图 key（默认 urban 都市夜景）
   var envKey = envMap || (window.HDRI_DEFAULT) || 'urban';
   var envExp = (typeof envExposure === 'number') ? envExposure : 1.0;
   var envRot = (typeof envRotation === 'number') ? envRotation : 0;
+  // 景深（Bokeh）：与编辑器「环境设置」里的景深开关及参数一致
+  var dofVal = (dof && typeof dof === 'object') ? {
+    enabled: !!dof.enabled,
+    focus: (typeof dof.focus === 'number') ? dof.focus : 10,
+    aperture: (typeof dof.aperture === 'number') ? dof.aperture : 0.025,
+    maxblur: (typeof dof.maxblur === 'number') ? dof.maxblur : 0.01
+  } : { enabled: false, focus: 10, aperture: 0.025, maxblur: 0.01 };
   // 场视角：与编辑器「全局信息」镜头参数一致；超出 10~120 范围时回落到 50
   var fovVal = (typeof fov === 'number' && isFinite(fov)) ? Math.max(10, Math.min(120, fov)) : 50;
   var _opt = (window.HDRI_MAP && window.HDRI_MAP[envKey]) || { key: envKey, type: 'hdr' };
@@ -688,7 +753,8 @@ function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions,
     .replace('__ENV_MAP__', '`' + envKey + '`')
     .replace('__ENV_EXPOSURE__', String(envExp))
     .replace('__ENV_ROTATION__', String(envRot))
-    .replace('__FOV__', String(fovVal));
+    .replace('__FOV__', String(fovVal))
+    .replace('__DOF__', JSON.stringify(dofVal));
 
   return `<!DOCTYPE html>
 <html lang="${window.getLang() === 'en' ? 'en' : 'zh-CN'}">
@@ -787,7 +853,7 @@ async function exportModelAsStandaloneHTML(modelId, DB, bgSettings) {
       if (d) sounds[sid] = d;
     }
   }
-  const html = buildStandaloneHTML(node.name, dataUrl, bgSettings, interactions, sounds, node.defaultView || null, false, collectExitMeshes(interactions), '', !!node.lockRotation, chains, node.envMap, node.envExposure, node.envRotation, (DB.getCameraSettings && DB.getCameraSettings().fov) || 50);
+  const html = buildStandaloneHTML(node.name, dataUrl, bgSettings, interactions, sounds, node.defaultView || null, false, collectExitMeshes(interactions), '', !!node.lockRotation, chains, node.envMap, node.envExposure, node.envRotation, (DB.getCameraSettings && DB.getCameraSettings().fov) || 50, node.dof);
   const safeName = (node.name || 'model').replace(/[\\/:*?"<>|]/g, '_');
   const filename = safeName.replace(/\.glb$/i, '') + '.html';
   downloadText(html, filename, 'text/html;charset=utf-8');
@@ -1153,6 +1219,31 @@ function loadHDRIRaw(key) {
   _hdriRawCache.set(key, p);
   return p;
 }
+// 生成「按经度旋转后的等距柱状贴图」：PMREM 不读 texture.offset，必须烘焙副本
+function bakeRotatedEquirect(rawTex, offsetU) {
+  var w = rawTex.image.width, h = rawTex.image.height;
+  var rt = new THREE.WebGLRenderTarget(w, h, {
+    type: rawTex.type, format: rawTex.format,
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    wrapS: THREE.RepeatWrapping, depthBuffer: false, stencilBuffer: false
+  });
+  var mat = new THREE.ShaderMaterial({
+    uniforms: { src: { value: rawTex }, offsetU: { value: offsetU } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: 'precision highp float; varying vec2 vUv; uniform sampler2D src; uniform float offsetU; void main(){ vec2 uv = vUv; uv.x = fract(uv.x + offsetU); gl_FragColor = texture2D(src, uv); }',
+    depthTest: false, depthWrite: false
+  });
+  var quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+  var sceneR = new THREE.Scene(); sceneR.add(quad);
+  var camR = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  var prev = renderer.getRenderTarget();
+  renderer.setRenderTarget(rt);
+  renderer.render(sceneR, camR);
+  renderer.setRenderTarget(prev);
+  mat.dispose(); quad.geometry.dispose();
+  rt.texture.mapping = THREE.EquirectangularReflectionMapping;
+  return rt;
+}
 function getHDRIEnv(key, rotation) {
   var rot = (typeof rotation === 'number') ? rotation : 0;
   var q = Math.round(rot * 1000) / 1000;
@@ -1160,10 +1251,16 @@ function getHDRIEnv(key, rotation) {
   if (_hdriEnvCache.has(ck)) return _hdriEnvCache.get(ck);
   var p = loadHDRIRaw(key).then(function(raw) {
     if (!raw) return null;
-    raw.offset.x = (q / (Math.PI * 2)) % 1;
-    raw.needsUpdate = true;
-    var rt = pmrem.fromEquirectangular(raw);
-    return rt.texture;
+    var offsetU = (q / (Math.PI * 2)) % 1;
+    var envTex;
+    if (Math.abs(offsetU) < 1e-4) {
+      envTex = pmrem.fromEquirectangular(raw).texture;
+    } else {
+      var rotated = bakeRotatedEquirect(raw, offsetU);
+      envTex = pmrem.fromEquirectangular(rotated.texture).texture;
+      rotated.dispose();
+    }
+    return envTex;
   });
   _hdriEnvCache.set(ck, p);
   return p;
@@ -1743,7 +1840,7 @@ async function exportFolderAsGalleryHTML(folderId, DB, bgSettings) {
     var singleEntry = modelsByNodeId[singleId];
     if (!singleEntry) throw new Error('该模型数据丢失');
     var singleBg = DB.resolveBgSettings(singleId);
-    var html = buildStandaloneHTML(singleNode.name, singleEntry.data, singleBg, singleEntry.interactions, singleEntry.sounds, singleNode.defaultView, false, collectExitMeshes(singleEntry.interactions), '', singleEntry.lockRotation, singleEntry.chains, singleNode.envMap, singleNode.envExposure, singleNode.envRotation, (DB.getCameraSettings && DB.getCameraSettings().fov) || 50);
+    var html = buildStandaloneHTML(singleNode.name, singleEntry.data, singleBg, singleEntry.interactions, singleEntry.sounds, singleNode.defaultView, false, collectExitMeshes(singleEntry.interactions), '', singleEntry.lockRotation, singleEntry.chains, singleNode.envMap, singleNode.envExposure, singleNode.envRotation, (DB.getCameraSettings && DB.getCameraSettings().fov) || 50, singleNode.dof);
     var safeName = (singleNode.name || 'model').replace(/[\\/:*?"<>|]/g, '_');
     var filename = safeName.replace(/\.glb$/i, '') + '.html';
     downloadText(html, filename, 'text/html;charset=utf-8');

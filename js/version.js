@@ -1,6 +1,6 @@
 // js/version.js — 应用版本号
 // 规则：26.0.0 起始，末位 +1，满 100 向中间位进位；中间位满 100 向首位进位。
-window.APP_VERSION = '26.0.8';
+window.APP_VERSION = '26.0.9';
 
 window.incrementVersion = function () {
   var parts = window.APP_VERSION.split('.');

@@ -318,7 +318,14 @@
       '环境已更新': 'Environment updated',
       '曝光已更新': 'Exposure updated',
       '旋转': 'Rotation',
-      '环境旋转已更新': 'Environment rotation updated'
+      '环境旋转已更新': 'Environment rotation updated',
+      '景深': 'Depth of Field',
+      '对焦距离': 'Focus Distance',
+      '光圈': 'Aperture',
+      '最大模糊': 'Max Blur',
+      '模拟相机景深：对焦距离以外的物体会虚化，营造电影感与空间层次。': 'Simulates camera depth of field: objects outside the focus distance blur, adding a cinematic sense of depth.',
+      '已开启景深': 'Depth of field enabled',
+      '已关闭景深': 'Depth of field disabled'
     }
   };
 

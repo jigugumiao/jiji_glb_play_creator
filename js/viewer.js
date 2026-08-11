@@ -105,6 +105,10 @@ class GLBViewer {
     this._hdriRawCache = new Map();  // key -> Promise<THREE.Texture>(等距原始贴图，保留不释放)
     this._hdriEnvCache = new Map();  // "key@量化角度" -> Promise<THREE.Texture>(PMREM 结果)
     this._rotRaf = null;             // 旋转拖动节流
+    // 景深（Bokeh）后处理：默认关闭；开启时走 EffectComposer + BokehPass
+    this._dofEnabled = false;
+    this._composer = null;
+    this._bokehPass = null;
   }
 
   _initLights() {
@@ -157,6 +161,34 @@ class GLBViewer {
     return p;
   }
 
+  // 生成「按经度旋转后的等距柱状贴图」：用全屏着色器把源贴图采样 uv.x 平移一段距离（水平环绕循环）。
+  // 之所以要烘焙副本再喂给 PMREM，是因为 PMREM 的烘焙是按球面方向采样源贴图，
+  // 根本不读取 texture.offset——直接改 offset.x 对 PMREM 结果完全无效（这是旋转之前不生效的根因）。
+  _bakeRotatedEquirect(rawTex, offsetU) {
+    const w = rawTex.image.width, h = rawTex.image.height;
+    const rt = new THREE.WebGLRenderTarget(w, h, {
+      type: rawTex.type, format: rawTex.format,
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+      wrapS: THREE.RepeatWrapping, depthBuffer: false, stencilBuffer: false
+    });
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { src: { value: rawTex }, offsetU: { value: offsetU } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: 'precision highp float; varying vec2 vUv; uniform sampler2D src; uniform float offsetU; void main(){ vec2 uv = vUv; uv.x = fract(uv.x + offsetU); gl_FragColor = texture2D(src, uv); }',
+      depthTest: false, depthWrite: false
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+    const scene = new THREE.Scene(); scene.add(quad);
+    const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const prev = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(rt);
+    this.renderer.render(scene, cam);
+    this.renderer.setRenderTarget(prev);
+    mat.dispose(); quad.geometry.dispose();
+    rt.texture.mapping = THREE.EquirectangularReflectionMapping;
+    return rt;
+  }
+
   // 获取某 HDRI 在指定旋转角度（弧度）下的 PMREM 环境贴图；按量化角度缓存避免重复烘焙
   getHDRIEnv(key, rotation) {
     const rot = (typeof rotation === 'number') ? rotation : 0;
@@ -165,10 +197,17 @@ class GLBViewer {
     if (this._hdriEnvCache.has(cacheKey)) return this._hdriEnvCache.get(cacheKey);
     const p = this.loadHDRIRaw(key).then((raw) => {
       if (!raw) return null;
-      raw.offset.x = (q / (Math.PI * 2)) % 1;       // 等距贴图水平一圈 = 2π，offset 范围 [0,1)
-      raw.needsUpdate = true;
-      const rt = this.pmrem.fromEquirectangular(raw);
-      return rt.texture;
+      const offsetU = (q / (Math.PI * 2)) % 1;       // 等距贴图水平一圈 = 2π，offset 范围 [0,1)
+      let envTex;
+      if (Math.abs(offsetU) < 1e-4) {
+        // 0°（或 360° 整数圈）：直接用原始贴图烘焙，避免不必要的副本
+        envTex = this.pmrem.fromEquirectangular(raw).texture;
+      } else {
+        const rotated = this._bakeRotatedEquirect(raw, offsetU);
+        envTex = this.pmrem.fromEquirectangular(rotated.texture).texture;
+        rotated.dispose();   // 源副本已烘焙进输出，可释放
+      }
+      return envTex;
     });
     this._hdriEnvCache.set(cacheKey, p);
     return p;
@@ -275,6 +314,7 @@ class GLBViewer {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    if (this._composer) this._composer.setSize(w, h);
   }
 
   _animate(time) {
@@ -351,7 +391,11 @@ class GLBViewer {
     }
 
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+    if (this._dofEnabled && this._composer) {
+      this._composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   dispose() {
@@ -446,6 +490,41 @@ class GLBViewer {
 
   getFov() {
     return this.camera ? this.camera.fov : 50;
+  }
+
+  // 懒初始化后处理管线（仅在首次启用景深时创建，避免无谓开销）
+  _ensureComposer() {
+    if (this._composer) return;
+    const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1;
+    const composer = new THREE.EffectComposer(this.renderer);
+    composer.addPass(new THREE.RenderPass(this.scene, this.camera));
+    const bokeh = new THREE.BokehPass(this.scene, this.camera, {
+      focus: 10.0, aperture: 0.025, maxblur: 0.01, width: w, height: h
+    });
+    composer.addPass(bokeh);
+    this._composer = composer;
+    this._bokehPass = bokeh;
+  }
+
+  // 应用景深设置（node.dof = { enabled, focus, aperture, maxblur }）；关闭时退回普通渲染
+  setDof(node) {
+    const d = (node && node.dof) || {};
+    const enabled = !!d.enabled;
+    if (enabled) {
+      this._ensureComposer();
+      const b = this._bokehPass;
+      if (b) {
+        if (typeof d.focus === 'number') b.uniforms['focus'].value = d.focus;
+        if (typeof d.aperture === 'number') b.uniforms['aperture'].value = d.aperture;
+        if (typeof d.maxblur === 'number') b.uniforms['maxblur'].value = d.maxblur;
+        if (b.uniforms['aspect']) b.uniforms['aspect'].value = this.camera.aspect;
+        b.enabled = true;
+      }
+      this._dofEnabled = true;
+    } else {
+      this._dofEnabled = false;
+      if (this._bokehPass) this._bokehPass.enabled = false;
+    }
   }
 
   // 从原生 Blob 加载（内部存储已为 Blob：省去 base64 解码，内存峰值更低）
