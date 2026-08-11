@@ -1266,9 +1266,9 @@ async function updateStatusBar() {
 
 // 状态栏：自动保存时间 + 当前选中对象反馈
 function markSaved() {
-  const t = new Date();
-  const hh = String(t.getHours()).padStart(2, '0');
-  const mm = String(t.getMinutes()).padStart(2, '0');
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
   if (dom.statSaved) dom.statSaved.textContent = t('已保存于') + ' ' + hh + ':' + mm;
 }
 function updateSelectionStatus() {
