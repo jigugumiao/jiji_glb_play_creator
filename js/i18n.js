@@ -316,7 +316,9 @@
       '曝光': 'Exposure',
       '用 HDRI 环境贴图替代默认灯光做照明；拖动曝光调整明暗。': 'Use an HDRI environment map instead of default lights for illumination; drag Exposure to adjust brightness.',
       '环境已更新': 'Environment updated',
-      '曝光已更新': 'Exposure updated'
+      '曝光已更新': 'Exposure updated',
+      '旋转': 'Rotation',
+      '环境旋转已更新': 'Environment rotation updated'
     }
   };
 

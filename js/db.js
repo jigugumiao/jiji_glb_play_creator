@@ -700,6 +700,12 @@ function setEnvExposure(id, val) {
   n.envExposure = (typeof val === 'number' && isFinite(val)) ? val : 1.0;
   saveTree();
 }
+function setEnvRotation(id, val) {
+  const n = _tree.nodes[id];
+  if (!n) return;
+  n.envRotation = (typeof val === 'number' && isFinite(val)) ? val : 0;
+  saveTree();
+}
 
 function getRootDescription() {
   return _tree.rootDescription || '';
@@ -983,7 +989,7 @@ window.DB = {
   getCameraSettings, setCameraSettings,
   setDefaultView,
   setLockRotation,
-  setEnvMap, setEnvExposure,
+  setEnvMap, setEnvExposure, setEnvRotation,
   countModels, countFolders, collectDescendantIds,
   exportProject, exportProjectById, importProject, resetAll,
   setBgSettings, getBgSettings, resolveBgSettings,

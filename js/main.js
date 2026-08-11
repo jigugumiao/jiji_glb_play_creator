@@ -462,6 +462,7 @@ async function renderModelInfo() {
   // 环境照明：HDRI 下拉 + 曝光（替代默认灯光）
   const envKey = n.envMap || window.HDRI_DEFAULT;
   const envExp = (typeof n.envExposure === 'number') ? n.envExposure : 1.0;
+  const envRotDeg = Math.round(((typeof n.envRotation === 'number' ? n.envRotation : 0) * 180 / Math.PI));
   const envLang = (window.getLang && window.getLang() === 'en') ? 'en' : 'zh';
   const envOptions = window.HDRI_OPTIONS.map(o => {
     const label = envLang === 'en' ? (o.en || o.label) : o.label;
@@ -484,7 +485,12 @@ async function renderModelInfo() {
           <input type="range" id="env-exposure" min="0.1" max="3" step="0.05" value="${envExp}" style="flex:1">
           <span class="v" id="env-exposure-val" style="min-width:36px;text-align:right">${envExp.toFixed(2)}</span>
         </div>
-        <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('用 HDRI 环境贴图替代默认灯光做照明；拖动曝光调整明暗。')}</div>
+        <div class="kv-row" style="align-items:center;gap:10px;margin-top:8px">
+          <span class="k" style="white-space:nowrap">${t('旋转')}</span>
+          <input type="range" id="env-rotation" min="0" max="360" step="1" value="${envRotDeg}" style="flex:1">
+          <span class="v" id="env-rotation-val" style="min-width:42px;text-align:right">${envRotDeg}°</span>
+        </div>
+        <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('用 HDRI 环境贴图替代默认灯光做照明；拖动曝光调整明暗，拖动旋转可环绕 360° 改变环境朝向。')}</div>
       </div>
     </div>`;
 
@@ -583,6 +589,21 @@ async function renderModelInfo() {
     };
     expSlider.addEventListener('input', onExp);
     expSlider.addEventListener('change', () => toast(t('曝光已更新')));
+  }
+  // 环境：旋转滑块（实时旋转环境贴图 0~360°，写入节点并即时重烘焙应用）
+  const rotSlider = $('env-rotation');
+  const rotVal = $('env-rotation-val');
+  if (rotSlider) {
+    const onRot = () => {
+      const deg = parseFloat(rotSlider.value);
+      if (rotVal) rotVal.textContent = deg + '°';
+      const rad = deg * Math.PI / 180;
+      DB.setEnvRotation(id, rad);
+      viewer.setEnvRotation(n, rad);
+      markSaved();
+    };
+    rotSlider.addEventListener('input', onRot);
+    rotSlider.addEventListener('change', () => toast(t('环境旋转已更新')));
   }
 
   // 点击交互配置：列出部位，下拉绑定动画 + 音效

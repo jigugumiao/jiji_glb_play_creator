@@ -34,6 +34,7 @@ const LOCK_ROTATION = __LOCK_ROTATION__; // 关闭手动旋转：true 时禁止�
 // 环境贴图（HDRI）：逐模型照明，由导出时注入的 window.HDRI_DATA / window.HDRI_MAP 提供
 const ENV_MAP = __ENV_MAP__;
 const ENV_EXPOSURE = __ENV_EXPOSURE__;
+const ENV_ROTATION = __ENV_ROTATION__; // 环境贴图旋转（弧度）
 
 // 剧情联动：内嵌模式（被剧情编辑器 iframe 召唤时为真）
 // EMBED=true 时，点中 EXIT_MESHES 中任一部位会向父页面 postMessage 通知「结束场景」
@@ -103,12 +104,12 @@ scene.environment = null;
 // 把等距柱状 HDRI 预过滤成供 PBR 使用的环境贴图（PMREM），按 key 缓存避免重复加载。
 const pmrem = new THREE.PMREMGenerator(renderer);
 pmrem.compileEquirectangularShader();
-const _hdriCache = new Map();
-function loadHDRI(key) {
+const _hdriRawCache = new Map();
+const _hdriEnvCache = new Map();
+function loadHDRIRaw(key) {
   if (!key || !window.HDRI_MAP || !window.HDRI_MAP[key]) return Promise.resolve(null);
-  if (_hdriCache.has(key)) return _hdriCache.get(key);
+  if (_hdriRawCache.has(key)) return _hdriRawCache.get(key);
   const opt = window.HDRI_MAP[key];
-  // 优先用内联 base64 数据（离线 / file:// 双击可用），本地 .exr/.hdr 文件仅作兜底
   const uri = (window.HDRI_DATA && window.HDRI_DATA[key]) || opt.file;
   const loader = opt.type === 'exr' ? new EXRLoader() : new RGBELoader();
   const p = new Promise((resolve, reject) => {
@@ -116,23 +117,42 @@ function loadHDRI(key) {
       uri,
       (tex) => {
         tex.mapping = THREE.EquirectangularReflectionMapping;
-        const rt = pmrem.fromEquirectangular(tex);
-        tex.dispose();
-        resolve(rt.texture);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        resolve(tex);
       },
       undefined,
-      (err) => { _hdriCache.delete(key); reject(err); }
+      (err) => { _hdriRawCache.delete(key); reject(err); }
     );
   });
-  _hdriCache.set(key, p);
+  _hdriRawCache.set(key, p);
+  return p;
+}
+function getHDRIEnv(key, rotation) {
+  const rot = (typeof rotation === 'number') ? rotation : 0;
+  const q = Math.round(rot * 1000) / 1000;
+  const ck = key + '@' + q;
+  if (_hdriEnvCache.has(ck)) return _hdriEnvCache.get(ck);
+  const p = loadHDRIRaw(key).then((raw) => {
+    if (!raw) return null;
+    raw.offset.x = (q / (Math.PI * 2)) % 1;
+    raw.needsUpdate = true;
+    const rt = pmrem.fromEquirectangular(raw);
+    return rt.texture;
+  });
+  _hdriEnvCache.set(ck, p);
   return p;
 }
 // 应用环境：HDRI 照明 + 曝光 + 逐材质 envMap（让该模型的 PBR 材质受环境反射）
 function applyEnvironment(node) {
   const key = (node && node.envMap) || 'urban';
   const exposure = (node && typeof node.envExposure === 'number') ? node.envExposure : 1.0;
+  const rotation = (node && typeof node.envRotation === 'number') ? node.envRotation : 0;
   renderer.toneMappingExposure = exposure;
-  return loadHDRI(key).then((envTex) => {
+  return getHDRIEnv(key, rotation).then((envTex) => {
     if (!envTex) return;
     scene.environment = envTex;
     if (currentModel) {
@@ -311,7 +331,7 @@ function loadModel() {
       grid.visible = maxDim < 50;
 
       // HDRI 环境照明：用所选 HDRI + 曝光作为该模型的主照明（替代默认灯光）
-      applyEnvironment({ envMap: ENV_MAP, envExposure: ENV_EXPOSURE });
+      applyEnvironment({ envMap: ENV_MAP, envExposure: ENV_EXPOSURE, envRotation: ENV_ROTATION });
 
       // 统计
       let vertices = 0, triangles = 0, meshes = 0, materials = 0;
@@ -605,10 +625,11 @@ function collectExitMeshes(interactions) {
 // 模板：把 viewer 源码和模型元数据塞进去
 // embed/exitMeshes/modelId 用于剧情联动：embed=true 时该 HTML 被剧情编辑器 iframe 召唤，
 // 点中 exitMeshes 中任一部位会向父页面 postMessage({type:'glb-scene-exit', id, mesh}) 通知结束场景
-function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions, sounds, defaultView, embed, exitMeshes, modelId, lockRotation, chains, envMap, envExposure) {
+function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions, sounds, defaultView, embed, exitMeshes, modelId, lockRotation, chains, envMap, envExposure, envRotation) {
   // 该模型使用的 HDRI 环境贴图 key（默认 urban 都市夜景）
   var envKey = envMap || (window.HDRI_DEFAULT) || 'urban';
   var envExp = (typeof envExposure === 'number') ? envExposure : 1.0;
+  var envRot = (typeof envRotation === 'number') ? envRotation : 0;
   var _opt = (window.HDRI_MAP && window.HDRI_MAP[envKey]) || { key: envKey, type: 'hdr' };
   var _data = (window.HDRI_DATA && window.HDRI_DATA[envKey]) || '';
   // 仅内联该模型用到的那一张 HDRI（base64 数据 URI），保持导出文件自包含、离线可用
@@ -660,7 +681,8 @@ function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions,
     .replace('__EXIT_MESHES__', JSON.stringify(exitMeshes || []))
     .replace('__MODEL_ID__', JSON.stringify(modelId || ''))
     .replace('__ENV_MAP__', '`' + envKey + '`')
-    .replace('__ENV_EXPOSURE__', String(envExp));
+    .replace('__ENV_EXPOSURE__', String(envExp))
+    .replace('__ENV_ROTATION__', String(envRot));
 
   return `<!DOCTYPE html>
 <html lang="${window.getLang() === 'en' ? 'en' : 'zh-CN'}">
@@ -759,7 +781,7 @@ async function exportModelAsStandaloneHTML(modelId, DB, bgSettings) {
       if (d) sounds[sid] = d;
     }
   }
-  const html = buildStandaloneHTML(node.name, dataUrl, bgSettings, interactions, sounds, node.defaultView || null, false, collectExitMeshes(interactions), '', !!node.lockRotation, chains, node.envMap, node.envExposure);
+  const html = buildStandaloneHTML(node.name, dataUrl, bgSettings, interactions, sounds, node.defaultView || null, false, collectExitMeshes(interactions), '', !!node.lockRotation, chains, node.envMap, node.envExposure, node.envRotation);
   const safeName = (node.name || 'model').replace(/[\\/:*?"<>|]/g, '_');
   const filename = safeName.replace(/\.glb$/i, '') + '.html';
   downloadText(html, filename, 'text/html;charset=utf-8');
@@ -789,7 +811,8 @@ var animPrevTime = 0;
 var PIXEL_SIZE = 2;
 // HDRI 环境贴图烘焙器与缓存（逐模型照明，替代默认灯光）
 var pmrem = null;
-var _hdriCache = new Map();
+var _hdriRawCache = new Map();
+var _hdriEnvCache = new Map();
 
 // 点击交互相关（THREE 动态加载，raycaster/pointer 在 initInteraction 里创建）
 var raycaster = null;
@@ -1099,11 +1122,10 @@ function initInteraction() {
 
 // ============ HDRI 环境贴图（逐模型照明） ============
 // 把等距柱状 HDRI 预过滤成 PBR 环境贴图（PMREM），按 key 缓存避免重复加载。
-function loadHDRI(key) {
+function loadHDRIRaw(key) {
   if (!key || !window.HDRI_MAP || !window.HDRI_MAP[key]) return Promise.resolve(null);
-  if (_hdriCache.has(key)) return _hdriCache.get(key);
+  if (_hdriRawCache.has(key)) return _hdriRawCache.get(key);
   var opt = window.HDRI_MAP[key];
-  // 优先用内联 base64 数据（离线 / file:// 双击可用），本地 .exr/.hdr 文件仅作兜底
   var uri = (window.HDRI_DATA && window.HDRI_DATA[key]) || opt.file;
   var loader = opt.type === 'exr' ? new EXRLoader() : new RGBELoader();
   var p = new Promise(function(resolve, reject) {
@@ -1111,23 +1133,42 @@ function loadHDRI(key) {
       uri,
       function(tex) {
         tex.mapping = THREE.EquirectangularReflectionMapping;
-        var rt = pmrem.fromEquirectangular(tex);
-        tex.dispose();
-        resolve(rt.texture);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        resolve(tex);
       },
       undefined,
-      function(err) { _hdriCache.delete(key); reject(err); }
+      function(err) { _hdriRawCache.delete(key); reject(err); }
     );
   });
-  _hdriCache.set(key, p);
+  _hdriRawCache.set(key, p);
+  return p;
+}
+function getHDRIEnv(key, rotation) {
+  var rot = (typeof rotation === 'number') ? rotation : 0;
+  var q = Math.round(rot * 1000) / 1000;
+  var ck = key + '@' + q;
+  if (_hdriEnvCache.has(ck)) return _hdriEnvCache.get(ck);
+  var p = loadHDRIRaw(key).then(function(raw) {
+    if (!raw) return null;
+    raw.offset.x = (q / (Math.PI * 2)) % 1;
+    raw.needsUpdate = true;
+    var rt = pmrem.fromEquirectangular(raw);
+    return rt.texture;
+  });
+  _hdriEnvCache.set(ck, p);
   return p;
 }
 // 应用环境：HDRI 照明 + 曝光 + 逐材质 envMap
 function applyEnvironment(node) {
   var key = (node && node.envMap) || 'urban';
   var exposure = (node && typeof node.envExposure === 'number') ? node.envExposure : 1.0;
+  var rotation = (node && typeof node.envRotation === 'number') ? node.envRotation : 0;
   if (renderer) renderer.toneMappingExposure = exposure;
-  return loadHDRI(key).then(function(envTex) {
+  return getHDRIEnv(key, rotation).then(function(envTex) {
     if (!envTex) return;
     scene.environment = envTex;
     if (currentModel) {
@@ -1685,7 +1726,7 @@ async function exportFolderAsGalleryHTML(folderId, DB, bgSettings) {
           if (d) sounds[sid] = d;
         }
       }
-      modelsByNodeId[nid] = { name: node.name, data: dataUrl, bg: mBg, interactions: interactions, sounds: sounds, defaultView: node.defaultView || null, lockRotation: !!node.lockRotation, chains: DB.getChains(nid) || [], envMap: node.envMap, envExposure: node.envExposure };
+      modelsByNodeId[nid] = { name: node.name, data: dataUrl, bg: mBg, interactions: interactions, sounds: sounds, defaultView: node.defaultView || null, lockRotation: !!node.lockRotation, chains: DB.getChains(nid) || [], envMap: node.envMap, envExposure: node.envExposure, envRotation: node.envRotation };
     }
   }
 
@@ -1696,7 +1737,7 @@ async function exportFolderAsGalleryHTML(folderId, DB, bgSettings) {
     var singleEntry = modelsByNodeId[singleId];
     if (!singleEntry) throw new Error('该模型数据丢失');
     var singleBg = DB.resolveBgSettings(singleId);
-    var html = buildStandaloneHTML(singleNode.name, singleEntry.data, singleBg, singleEntry.interactions, singleEntry.sounds, singleNode.defaultView, false, collectExitMeshes(singleEntry.interactions), '', singleEntry.lockRotation, singleEntry.chains, singleNode.envMap, singleNode.envExposure);
+    var html = buildStandaloneHTML(singleNode.name, singleEntry.data, singleBg, singleEntry.interactions, singleEntry.sounds, singleNode.defaultView, false, collectExitMeshes(singleEntry.interactions), '', singleEntry.lockRotation, singleEntry.chains, singleNode.envMap, singleNode.envExposure, singleNode.envRotation);
     var safeName = (singleNode.name || 'model').replace(/[\\/:*?"<>|]/g, '_');
     var filename = safeName.replace(/\.glb$/i, '') + '.html';
     downloadText(html, filename, 'text/html;charset=utf-8');

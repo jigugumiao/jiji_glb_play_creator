@@ -100,7 +100,11 @@ class GLBViewer {
     // HDRI 环境贴图烘焙器：把等距柱状 HDRI 预过滤成供 PBR 使用的环境贴图
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.pmrem.compileEquirectangularShader();
-    this._hdriCache = new Map();   // key -> Promise<THREE.Texture>(PMREM 结果)
+    // 等距柱状 HDRI 旋转方案（版本无关，兼容 r147/r160 无 environmentRotation 的现状）：
+    // 保留 equirectangular 原始贴图，旋转时改 offset.x 后重烘焙 PMREM。
+    this._hdriRawCache = new Map();  // key -> Promise<THREE.Texture>(等距原始贴图，保留不释放)
+    this._hdriEnvCache = new Map();  // "key@量化角度" -> Promise<THREE.Texture>(PMREM 结果)
+    this._rotRaf = null;             // 旋转拖动节流
   }
 
   _initLights() {
@@ -124,10 +128,10 @@ class GLBViewer {
     this.scene.environment = null;
   }
 
-  // 加载并缓存某 HDRI 的 PMREM 环境贴图（结果按 key 缓存，切换模型不重复加载）
-  loadHDRI(key) {
+  // 加载并保留某 HDRI 的 equirectangular 原始贴图（不释放，供按需重烘焙以支持旋转）
+  loadHDRIRaw(key) {
     if (!key || !window.HDRI_MAP[key]) return Promise.resolve(null);
-    if (this._hdriCache.has(key)) return this._hdriCache.get(key);
+    if (this._hdriRawCache.has(key)) return this._hdriRawCache.get(key);
     const opt = window.HDRI_MAP[key];
     // 优先用内联 base64 数据（assets/hdri/<key>.js 启动时已注入 window.HDRI_DATA），
     // 这样 file:// 双击离线也能加载；本地 .exr/.hdr 文件作为兜底（需经本地服务器）。
@@ -138,15 +142,35 @@ class GLBViewer {
         uri,
         (tex) => {
           tex.mapping = THREE.EquirectangularReflectionMapping;
-          const rt = this.pmrem.fromEquirectangular(tex);
-          tex.dispose();                 // 原始等距贴图已烘焙，释放
-          resolve(rt.texture);
+          tex.wrapS = THREE.RepeatWrapping;        // 水平方向循环，配合 offset.x 实现经度旋转
+          tex.wrapT = THREE.ClampToEdgeWrapping;
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.needsUpdate = true;
+          resolve(tex);                           // 保留原始贴图，不 dispose
         },
         undefined,
-        (err) => { this._hdriCache.delete(key); reject(err); }
+        (err) => { this._hdriRawCache.delete(key); reject(err); }
       );
     });
-    this._hdriCache.set(key, p);
+    this._hdriRawCache.set(key, p);
+    return p;
+  }
+
+  // 获取某 HDRI 在指定旋转角度（弧度）下的 PMREM 环境贴图；按量化角度缓存避免重复烘焙
+  getHDRIEnv(key, rotation) {
+    const rot = (typeof rotation === 'number') ? rotation : 0;
+    const q = Math.round(rot * 1000) / 1000;       // 量化到 0.001 弧度，避免浮点 key 爆炸
+    const cacheKey = key + '@' + q;
+    if (this._hdriEnvCache.has(cacheKey)) return this._hdriEnvCache.get(cacheKey);
+    const p = this.loadHDRIRaw(key).then((raw) => {
+      if (!raw) return null;
+      raw.offset.x = (q / (Math.PI * 2)) % 1;       // 等距贴图水平一圈 = 2π，offset 范围 [0,1)
+      raw.needsUpdate = true;
+      const rt = this.pmrem.fromEquirectangular(raw);
+      return rt.texture;
+    });
+    this._hdriEnvCache.set(cacheKey, p);
     return p;
   }
 
@@ -155,8 +179,9 @@ class GLBViewer {
   applyEnvironment(node) {
     const key = (node && node.envMap) || window.HDRI_DEFAULT;
     const exposure = (node && typeof node.envExposure === 'number') ? node.envExposure : 1.0;
+    const rotation = (node && typeof node.envRotation === 'number') ? node.envRotation : 0;
     this.renderer.toneMappingExposure = exposure;
-    return this.loadHDRI(key).then((envTex) => {
+    return this.getHDRIEnv(key, rotation).then((envTex) => {
       if (!envTex) return;
       this.scene.environment = envTex;
       if (this.currentModel) {
@@ -173,6 +198,29 @@ class GLBViewer {
   // 仅更新曝光（滑块实时拖动用，避免重复加载 HDRI）
   setExposure(val) {
     this.renderer.toneMappingExposure = (typeof val === 'number') ? val : 1.0;
+  }
+
+  // 实时旋转：拖动滑块时用 rAF 节流重烘焙并应用（不写 DB，DB 由调用方写入）
+  setEnvRotation(node, radian) {
+    if (node) node.envRotation = (typeof radian === 'number') ? radian : 0;
+    if (this._rotRaf) cancelAnimationFrame(this._rotRaf);
+    this._rotRaf = requestAnimationFrame(() => {
+      this._rotRaf = null;
+      const key = (node && node.envMap) || window.HDRI_DEFAULT;
+      const rotation = (node && typeof node.envRotation === 'number') ? node.envRotation : 0;
+      this.getHDRIEnv(key, rotation).then((envTex) => {
+        if (!envTex) return;
+        this.scene.environment = envTex;
+        if (this.currentModel) {
+          this.currentModel.traverse((o) => {
+            if (o.isMesh && o.material) {
+              const mats = Array.isArray(o.material) ? o.material : [o.material];
+              mats.forEach((m) => { m.envMap = envTex; m.needsUpdate = true; });
+            }
+          });
+        }
+      });
+    });
   }
 
   _initControls() {
@@ -312,11 +360,16 @@ class GLBViewer {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     if (this.currentBlobUrl) URL.revokeObjectURL(this.currentBlobUrl);
-    // 释放缓存的 HDRI 环境贴图
-    if (this._hdriCache) {
-      this._hdriCache.forEach((p) => p.then?.((t) => t && t.dispose?.()).catch(() => {}));
-      this._hdriCache.clear();
+    // 释放缓存的 HDRI 环境贴图（原始贴图 + 各角度 PMREM 结果）
+    if (this._hdriRawCache) {
+      this._hdriRawCache.forEach((p) => p.then?.((t) => t && t.dispose?.()).catch(() => {}));
+      this._hdriRawCache.clear();
     }
+    if (this._hdriEnvCache) {
+      this._hdriEnvCache.forEach((p) => p.then?.((t) => t && t.dispose?.()).catch(() => {}));
+      this._hdriEnvCache.clear();
+    }
+    if (this._rotRaf) { cancelAnimationFrame(this._rotRaf); this._rotRaf = null; }
     this.pmrem?.dispose();
   }
 
