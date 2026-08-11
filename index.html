@@ -15,7 +15,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 21 7v10l-9 4.5L3 17V7z"/><path d="M3 7l9 4.5L21 7M12 11.5V21.5"/></svg>
       </span>
       <span data-i18n="3D交互制作器">3D交互制作器</span>
-      <span class="version-badge" id="version-badge">v26.0.0</span>
+      <span class="version-badge" id="version-badge">v26.0.1</span>
     </div>
     <div class="nav-group topbar-project">
       <button class="btn" id="btn-projects" title="返回项目列表，切换或管理项目" data-i18n-title="返回项目列表，切换或管理项目">项目</button>
@@ -251,6 +251,16 @@
 <script src="vendor/three/three.min.js"></script>
 <script src="vendor/three/OrbitControls.js"></script>
 <script src="vendor/three/GLTFLoader.js"></script>
+<script src="vendor/three/RGBELoader.js"></script>
+<script src="vendor/three/EXRLoader.js"></script>
+<!-- HDRI 环境贴图数据（base64 内联，file:// 双击离线可用，无需联网读取本地文件） -->
+<script src="assets/hdri/urban.js"></script>
+<script src="assets/hdri/indoor.js"></script>
+<script src="assets/hdri/blue.js"></script>
+<script src="assets/hdri/purple.js"></script>
+<script src="assets/hdri/snow.js"></script>
+<script src="assets/hdri/grotto.js"></script>
+<script src="assets/hdri/forest.js"></script>
 <script>
   // UMD 版已把 THREE / THREE.OrbitControls / THREE.GLTFLoader 挂到全局，通知主程序 Three.js 就绪
   window._threeReady = true;

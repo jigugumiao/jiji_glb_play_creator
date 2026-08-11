@@ -452,6 +452,30 @@ async function renderModelInfo() {
     }
   }
 
+  // 环境照明：HDRI 下拉 + 曝光（替代默认灯光）
+  const envKey = n.envMap || window.HDRI_DEFAULT;
+  const envExp = (typeof n.envExposure === 'number') ? n.envExposure : 1.0;
+  const envLang = (window.getLang && window.getLang() === 'en') ? 'en' : 'zh';
+  const envOptions = window.HDRI_OPTIONS.map(o => {
+    const label = envLang === 'en' ? (o.en || o.label) : o.label;
+    return `<option value="${o.key}" ${o.key === envKey ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+  html += `
+    <div class="panel-section">
+      <h4>${t('环境')}</h4>
+      <div class="kv-row"><span class="k">${t('环境贴图')}</span>
+        <select id="env-select" class="info-select" title="${t('选 HDRI 作为该模型的照明环境')}">
+          ${envOptions}
+        </select>
+      </div>
+      <div class="kv-row" style="align-items:center;gap:10px">
+        <span class="k" style="white-space:nowrap">${t('曝光')}</span>
+        <input type="range" id="env-exposure" min="0.1" max="3" step="0.05" value="${envExp}" style="flex:1">
+        <span class="v" id="env-exposure-val" style="min-width:36px;text-align:right">${envExp.toFixed(2)}</span>
+      </div>
+      <div class="hint" style="font-size:11px;margin-top:6px;color:#8b93a3">${t('用 HDRI 环境贴图替代默认灯光做照明；拖动曝光调整明暗。')}</div>
+    </div>`;
+
   // 视图设置：关闭手动旋转（仅影响导出成品，不影响编辑器内编辑）
   html += `
     <div class="panel-section">
@@ -514,6 +538,31 @@ async function renderModelInfo() {
       markSaved();
       toast(lockCh.checked ? '已开启「关闭手动旋转」：导出成品将固定在默认视角' : '已关闭「关闭手动旋转」');
     });
+  }
+
+  // 环境：HDRI 下拉切换（写入节点并即时应用）
+  const envSel = $('env-select');
+  if (envSel) {
+    envSel.addEventListener('change', () => {
+      DB.setEnvMap(id, envSel.value);
+      markSaved();
+      viewer.applyEnvironment(n);   // n 为当前节点引用，已就地更新 envMap
+      toast(t('环境已更新'));
+    });
+  }
+  // 环境：曝光滑块（实时调整亮度，写入节点）
+  const expSlider = $('env-exposure');
+  const expVal = $('env-exposure-val');
+  if (expSlider) {
+    const onExp = () => {
+      const v = parseFloat(expSlider.value);
+      if (expVal) expVal.textContent = v.toFixed(2);
+      DB.setEnvExposure(id, v);
+      viewer.setExposure(v);
+      markSaved();
+    };
+    expSlider.addEventListener('input', onExp);
+    expSlider.addEventListener('change', () => toast(t('曝光已更新')));
   }
 
   // 点击交互配置：列出部位，下拉绑定动画 + 音效
@@ -1573,6 +1622,7 @@ async function handleUpload(files) {
         id, name, type: 'model',
         parentId: state.currentFolderId, children: [],
         size: file.size, blobId,
+        envMap: window.HDRI_DEFAULT, envExposure: 1.0,
         createdAt: Date.now(),
       });
       success++;
@@ -1750,6 +1800,8 @@ async function loadModelIntoViewer(id) {
       return;
     }
     const stats = await viewer.loadFromBlob(blob, node.defaultView || null);
+    // 应用该模型的 HDRI 环境照明（异步加载，不阻塞模型显示）
+    viewer.applyEnvironment(node);
     viewer.setInteractions(DB.getInteractions(id) || {});
     viewer.setChains(DB.getChains(id) || []);   // 把交互链推给 3D 预览，链门禁才能在编辑器内生效（方便预览解谜顺序）
     viewer.setSounds(await DB.getAllSoundData());
@@ -2222,6 +2274,8 @@ async function duplicateNode(id) {
     size: node.size, blobId: newBlobId,
     createdAt: Date.now(),
     defaultView: node.defaultView || null,
+    envMap: node.envMap || window.HDRI_DEFAULT,
+    envExposure: (typeof node.envExposure === 'number') ? node.envExposure : 1.0,
   });
   // 复制交互配置
   const interactions = DB.getInteractions(id) || {};

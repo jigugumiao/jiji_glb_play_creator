@@ -536,6 +536,23 @@ input, button, textarea, select { color: var(--txt); }
 }
 .info-name-input:focus { border-color: var(--accent-2); }
 
+.info-select {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  color: var(--txt);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 12.5px;
+  font-family: var(--font, system-ui, sans-serif);
+  text-align: right;
+  outline: none;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.info-select:focus { border-color: var(--accent-2); }
+
 .folder-desc {
   width: 100%;
   min-height: 84px;

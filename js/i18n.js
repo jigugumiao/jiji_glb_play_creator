@@ -297,7 +297,15 @@
       '（内置）向上跳一下': '(Built-in) Jump up',
       '（内置）原地摇晃': '(Built-in) Shake',
       '（内置）旋转一圈': '(Built-in) Spin',
-      '（内置）点头': '(Built-in) Nod'
+      '（内置）点头': '(Built-in) Nod',
+
+      // 环境（HDRI）面板
+      '环境': 'Environment',
+      '环境贴图': 'Environment Map',
+      '曝光': 'Exposure',
+      '用 HDRI 环境贴图替代默认灯光做照明；拖动曝光调整明暗。': 'Use an HDRI environment map instead of default lights for illumination; drag Exposure to adjust brightness.',
+      '环境已更新': 'Environment updated',
+      '曝光已更新': 'Exposure updated'
     }
   };
 

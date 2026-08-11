@@ -685,6 +685,22 @@ function setLockRotation(id, val) {
   saveTree();
 }
 
+// 设置模型的环境贴图（HDRI key）
+function setEnvMap(id, key) {
+  const n = _tree.nodes[id];
+  if (!n) return;
+  n.envMap = key || window.HDRI_DEFAULT;
+  saveTree();
+}
+
+// 设置模型的 HDRI 曝光值
+function setEnvExposure(id, val) {
+  const n = _tree.nodes[id];
+  if (!n) return;
+  n.envExposure = (typeof val === 'number' && isFinite(val)) ? val : 1.0;
+  saveTree();
+}
+
 function getRootDescription() {
   return _tree.rootDescription || '';
 }
@@ -956,6 +972,7 @@ window.DB = {
   updateDescription, getRootDescription, setRootDescription,
   setDefaultView,
   setLockRotation,
+  setEnvMap, setEnvExposure,
   countModels, countFolders, collectDescendantIds,
   exportProject, exportProjectById, importProject, resetAll,
   setBgSettings, getBgSettings, resolveBgSettings,

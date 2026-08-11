@@ -21,6 +21,8 @@ function buildExporterI18n() {
 const EXPORTER_VIEWER_SOURCE = String.raw`import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
 // 内嵌查看器（基于 js/viewer.js 的 GLBViewer 类，精简为自包含版本）
 
@@ -28,6 +30,10 @@ const MODEL_NAME = __MODEL_NAME__;
 let MODEL_SRC = __MODEL_BLOB__; // 用 let 以便加载完成后释放，降低内存占用
 const DEFAULT_VIEW = __DEFAULT_VIEW__;
 const LOCK_ROTATION = __LOCK_ROTATION__; // 关闭手动旋转：true 时禁止轨道旋转，固定在默认视角
+
+// 环境贴图（HDRI）：逐模型照明，由导出时注入的 window.HDRI_DATA / window.HDRI_MAP 提供
+const ENV_MAP = __ENV_MAP__;
+const ENV_EXPOSURE = __ENV_EXPOSURE__;
 
 // 剧情联动：内嵌模式（被剧情编辑器 iframe 召唤时为真）
 // EMBED=true 时，点中 EXIT_MESHES 中任一部位会向父页面 postMessage 通知「结束场景」
@@ -50,7 +56,7 @@ const PIXEL_SIZE = 2;            // 像素块大小：1=高清，2=轻度像素�
 const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
 renderer.setPixelRatio(1);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = ENV_EXPOSURE;
 container.appendChild(renderer.domElement);
 
 // 让 canvas 占满容器，由 CSS 放大产生像素感
@@ -75,20 +81,70 @@ controls.maxDistance = 1000;
 // 关闭手动旋转：锁定后禁用轨道旋转，但保留缩放/平移（仅限制旋转），并固定在默认视角
 if (LOCK_ROTATION) controls.enableRotate = false;
 
-// ============ 灯光 ============
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
-keyLight.position.set(5, 8, 6);
-scene.add(keyLight);
+// ============ 灯光（HDRI 环境贴图为主照明） ============
+// 主照明由 HDRI 环境贴图提供（applyEnvironment 设置 scene.environment + 逐材质 envMap），
+// 这里仅保留一盏极弱方向光，用于产生地面接触阴影，保持「落地」质感，不再叠加造型光。
+const shadowLight = new THREE.DirectionalLight(0xffffff, 0.2);
+shadowLight.position.set(5, 8, 6);
+shadowLight.castShadow = true;
+shadowLight.shadow.mapSize.set(1024, 1024);
+shadowLight.shadow.camera.near = 0.01;
+shadowLight.shadow.camera.far = 200;
+shadowLight.shadow.camera.left = -20;
+shadowLight.shadow.camera.right = 20;
+shadowLight.shadow.camera.top = 20;
+shadowLight.shadow.camera.bottom = -20;
+shadowLight.shadow.bias = -0.0005;
+scene.add(shadowLight);
+scene.add(shadowLight.target);
+scene.environment = null;
 
-const fillLight = new THREE.DirectionalLight(0x88aaff, 0.5);
-fillLight.position.set(-6, 3, -4);
-scene.add(fillLight);
-
-const ambLight = new THREE.AmbientLight(0xffffff, 0.4);
-scene.add(ambLight);
-
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0x223344, 0.5);
-scene.add(hemiLight);
+// ============ HDRI 环境贴图烘焙器 ============
+// 把等距柱状 HDRI 预过滤成供 PBR 使用的环境贴图（PMREM），按 key 缓存避免重复加载。
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+const _hdriCache = new Map();
+function loadHDRI(key) {
+  if (!key || !window.HDRI_MAP || !window.HDRI_MAP[key]) return Promise.resolve(null);
+  if (_hdriCache.has(key)) return _hdriCache.get(key);
+  const opt = window.HDRI_MAP[key];
+  // 优先用内联 base64 数据（离线 / file:// 双击可用），本地 .exr/.hdr 文件仅作兜底
+  const uri = (window.HDRI_DATA && window.HDRI_DATA[key]) || opt.file;
+  const loader = opt.type === 'exr' ? new EXRLoader() : new RGBELoader();
+  const p = new Promise((resolve, reject) => {
+    loader.load(
+      uri,
+      (tex) => {
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        const rt = pmrem.fromEquirectangular(tex);
+        tex.dispose();
+        resolve(rt.texture);
+      },
+      undefined,
+      (err) => { _hdriCache.delete(key); reject(err); }
+    );
+  });
+  _hdriCache.set(key, p);
+  return p;
+}
+// 应用环境：HDRI 照明 + 曝光 + 逐材质 envMap（让该模型的 PBR 材质受环境反射）
+function applyEnvironment(node) {
+  const key = (node && node.envMap) || 'urban';
+  const exposure = (node && typeof node.envExposure === 'number') ? node.envExposure : 1.0;
+  renderer.toneMappingExposure = exposure;
+  return loadHDRI(key).then((envTex) => {
+    if (!envTex) return;
+    scene.environment = envTex;
+    if (currentModel) {
+      currentModel.traverse((o) => {
+        if (o.isMesh && o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach((m) => { m.envMap = envTex; m.needsUpdate = true; });
+        }
+      });
+    }
+  });
+}
 
 // ============ 辅助 ============
 const grid = new THREE.GridHelper(20, 20, 0x2a3142, 0x1d2230);
@@ -253,6 +309,9 @@ function loadModel() {
 
       axes.visible = maxDim > 0.3;
       grid.visible = maxDim < 50;
+
+      // HDRI 环境照明：用所选 HDRI + 曝光作为该模型的主照明（替代默认灯光）
+      applyEnvironment({ envMap: ENV_MAP, envExposure: ENV_EXPOSURE });
 
       // 统计
       let vertices = 0, triangles = 0, meshes = 0, materials = 0;
@@ -546,7 +605,16 @@ function collectExitMeshes(interactions) {
 // 模板：把 viewer 源码和模型元数据塞进去
 // embed/exitMeshes/modelId 用于剧情联动：embed=true 时该 HTML 被剧情编辑器 iframe 召唤，
 // 点中 exitMeshes 中任一部位会向父页面 postMessage({type:'glb-scene-exit', id, mesh}) 通知结束场景
-function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions, sounds, defaultView, embed, exitMeshes, modelId, lockRotation, chains) {
+function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions, sounds, defaultView, embed, exitMeshes, modelId, lockRotation, chains, envMap, envExposure) {
+  // 该模型使用的 HDRI 环境贴图 key（默认 urban 都市夜景）
+  var envKey = envMap || (window.HDRI_DEFAULT) || 'urban';
+  var envExp = (typeof envExposure === 'number') ? envExposure : 1.0;
+  var _opt = (window.HDRI_MAP && window.HDRI_MAP[envKey]) || { key: envKey, type: 'hdr' };
+  var _data = (window.HDRI_DATA && window.HDRI_DATA[envKey]) || '';
+  // 仅内联该模型用到的那一张 HDRI（base64 数据 URI），保持导出文件自包含、离线可用
+  var hdriBundle =
+    '<' + 'script>window.HDRI_DATA=window.HDRI_DATA||{};window.HDRI_DATA[' + JSON.stringify(envKey) + ']=' + JSON.stringify(_data) + ';<' + '/script>' +
+    '<' + 'script>window.HDRI_MAP=window.HDRI_MAP||{};window.HDRI_MAP[' + JSON.stringify(envKey) + ']={key:' + JSON.stringify(envKey) + ',type:' + JSON.stringify(_opt.type) + '};<' + '/script>';
   // 转义 modelName：放到 JS 字符串里需要转义反引号、反斜杠、${}
   const safeName = modelName.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
   const safeBlob = base64DataUrl; // base64 本身不含特殊字符
@@ -590,7 +658,9 @@ function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions,
     .replace('__LOCK_ROTATION__', lockRotation ? 'true' : 'false')
     .replace('__EMBED__', embed ? 'true' : 'false')
     .replace('__EXIT_MESHES__', JSON.stringify(exitMeshes || []))
-    .replace('__MODEL_ID__', JSON.stringify(modelId || ''));
+    .replace('__MODEL_ID__', JSON.stringify(modelId || ''))
+    .replace('__ENV_MAP__', '`' + envKey + '`')
+    .replace('__ENV_EXPOSURE__', String(envExp));
 
   return `<!DOCTYPE html>
 <html lang="${window.getLang() === 'en' ? 'en' : 'zh-CN'}">
@@ -598,6 +668,7 @@ function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions,
 <meta charset="UTF-8">
 ${buildExporterI18n()}
 <title>${escapeHtml(t('3D 查看器'))} - ${escapeHtml(modelName)}</title>
+${hdriBundle}
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; overflow: hidden; background: ${bodyBg}; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e6e9ef; }
@@ -688,7 +759,7 @@ async function exportModelAsStandaloneHTML(modelId, DB, bgSettings) {
       if (d) sounds[sid] = d;
     }
   }
-  const html = buildStandaloneHTML(node.name, dataUrl, bgSettings, interactions, sounds, node.defaultView || null, false, collectExitMeshes(interactions), '', !!node.lockRotation, chains);
+  const html = buildStandaloneHTML(node.name, dataUrl, bgSettings, interactions, sounds, node.defaultView || null, false, collectExitMeshes(interactions), '', !!node.lockRotation, chains, node.envMap, node.envExposure);
   const safeName = (node.name || 'model').replace(/[\\/:*?"<>|]/g, '_');
   const filename = safeName.replace(/\.glb$/i, '') + '.html';
   downloadText(html, filename, 'text/html;charset=utf-8');
@@ -708,7 +779,7 @@ var _lastFolder = 'root';
 var _3dReady = false;
 var _3dLoading = false;
 var _3dPromise = null;
-var THREE, OrbitControls, GLTFLoader;
+var THREE, OrbitControls, GLTFLoader, EXRLoader, RGBELoader;
 var currentModel = null;
 var blobUrl = null;
 var scene, camera, renderer, controls, viewEl;
@@ -716,6 +787,9 @@ var mixer = null;
 var animActions = [];
 var animPrevTime = 0;
 var PIXEL_SIZE = 2;
+// HDRI 环境贴图烘焙器与缓存（逐模型照明，替代默认灯光）
+var pmrem = null;
+var _hdriCache = new Map();
 
 // 点击交互相关（THREE 动态加载，raycaster/pointer 在 initInteraction 里创建）
 var raycaster = null;
@@ -1023,6 +1097,50 @@ function initInteraction() {
   });
 }
 
+// ============ HDRI 环境贴图（逐模型照明） ============
+// 把等距柱状 HDRI 预过滤成 PBR 环境贴图（PMREM），按 key 缓存避免重复加载。
+function loadHDRI(key) {
+  if (!key || !window.HDRI_MAP || !window.HDRI_MAP[key]) return Promise.resolve(null);
+  if (_hdriCache.has(key)) return _hdriCache.get(key);
+  var opt = window.HDRI_MAP[key];
+  // 优先用内联 base64 数据（离线 / file:// 双击可用），本地 .exr/.hdr 文件仅作兜底
+  var uri = (window.HDRI_DATA && window.HDRI_DATA[key]) || opt.file;
+  var loader = opt.type === 'exr' ? new EXRLoader() : new RGBELoader();
+  var p = new Promise(function(resolve, reject) {
+    loader.load(
+      uri,
+      function(tex) {
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        var rt = pmrem.fromEquirectangular(tex);
+        tex.dispose();
+        resolve(rt.texture);
+      },
+      undefined,
+      function(err) { _hdriCache.delete(key); reject(err); }
+    );
+  });
+  _hdriCache.set(key, p);
+  return p;
+}
+// 应用环境：HDRI 照明 + 曝光 + 逐材质 envMap
+function applyEnvironment(node) {
+  var key = (node && node.envMap) || 'urban';
+  var exposure = (node && typeof node.envExposure === 'number') ? node.envExposure : 1.0;
+  if (renderer) renderer.toneMappingExposure = exposure;
+  return loadHDRI(key).then(function(envTex) {
+    if (!envTex) return;
+    scene.environment = envTex;
+    if (currentModel) {
+      currentModel.traverse(function(o) {
+        if (o.isMesh && o.material) {
+          var mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach(function(m) { m.envMap = envTex; m.needsUpdate = true; });
+        }
+      });
+    }
+  });
+}
+
 // ============ 像素滤镜 ============
 // 渲染到低分辨率 drawing buffer，再用 CSS（image-rendering: pixelated）放大成硬边像素块
 function resizeView() {
@@ -1041,12 +1159,16 @@ async function init3D() {
     _3dPromise = Promise.all([
       import('three'),
       import('three/addons/controls/OrbitControls.js'),
-      import('three/addons/loaders/GLTFLoader.js')
+      import('three/addons/loaders/GLTFLoader.js'),
+      import('three/addons/loaders/EXRLoader.js'),
+      import('three/addons/loaders/RGBELoader.js')
     ]);
     var mods = await _3dPromise;
     THREE = mods[0];
     OrbitControls = mods[1].OrbitControls;
     GLTFLoader = mods[2].GLTFLoader;
+    EXRLoader = mods[3].EXRLoader;
+    RGBELoader = mods[4].RGBELoader;
     _3dReady = true;
     return true;
   } catch (err) {
@@ -1075,13 +1197,24 @@ function setupScene() {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  var key = new THREE.DirectionalLight(0xffffff, 1.4);
-  key.position.set(5, 8, 6);
-  scene.add(key);
-  var fill = new THREE.DirectionalLight(0x6688cc, 0.4);
-  fill.position.set(-6, 3, -4);
-  scene.add(fill);
-  scene.add(new THREE.AmbientLight(0x8899bb, 0.5));
+  // 主照明由 HDRI 环境贴图提供（applyEnvironment 设置 scene.environment），
+  // 此处仅保留一盏极弱方向光用于地面接触阴影，保持「落地」质感。
+  var shadowLight = new THREE.DirectionalLight(0xffffff, 0.2);
+  shadowLight.position.set(5, 8, 6);
+  shadowLight.castShadow = true;
+  shadowLight.shadow.mapSize.set(1024, 1024);
+  shadowLight.shadow.camera.near = 0.01;
+  shadowLight.shadow.camera.far = 200;
+  shadowLight.shadow.camera.left = -20;
+  shadowLight.shadow.camera.right = 20;
+  shadowLight.shadow.camera.top = 20;
+  shadowLight.shadow.camera.bottom = -20;
+  shadowLight.shadow.bias = -0.0005;
+  scene.add(shadowLight);
+  scene.add(shadowLight.target);
+  scene.environment = null;
+  pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
   window.addEventListener('resize', function() {
     var rw = viewEl.clientWidth || window.innerWidth;
     var rh = viewEl.clientHeight || window.innerHeight;
@@ -1218,6 +1351,9 @@ function loadModel(index) {
   loader.load(blobUrl, function(gltf) {
     currentModel = gltf.scene;
     scene.add(currentModel);
+
+    // HDRI 环境照明：用该模型所选 HDRI + 曝光作为主照明（替代默认灯光）
+    applyEnvironment(model);
 
     // 提取动画
     if (gltf.animations && gltf.animations.length > 0) {
@@ -1394,6 +1530,17 @@ function buildGalleryHTML(folderName, entries, modelsByNodeId, rootDesc, rootBg)
   var dataJson = JSON.stringify({ models: models, folders: folders }).replace(/</g, '\\u003c');
   var escapedName = escapeHtml(folderName);
 
+  // 内联该目录库用到的所有 HDRI（按模型各自 envMap 去重），保持导出文件自包含、离线可用
+  var usedEnvKeys = {};
+  models.forEach(function(m) { if (m && m.envMap) usedEnvKeys[m.envMap] = true; });
+  var hdriBundle = '';
+  Object.keys(usedEnvKeys).forEach(function(k) {
+    var opt = (window.HDRI_MAP && window.HDRI_MAP[k]) || { key: k, type: 'hdr' };
+    var d = (window.HDRI_DATA && window.HDRI_DATA[k]) || '';
+    hdriBundle += '<' + 'script>window.HDRI_DATA=window.HDRI_DATA||{};window.HDRI_DATA[' + JSON.stringify(k) + ']=' + JSON.stringify(d) + ';<' + '/script>';
+    hdriBundle += '<' + 'script>window.HDRI_MAP=window.HDRI_MAP||{};window.HDRI_MAP[' + JSON.stringify(k) + ']={key:' + JSON.stringify(k) + ',type:' + JSON.stringify(opt.type) + '};<' + '/script>';
+  });
+
   // CSS body background
   var bodyBg = rootBg || '#080b14';
 
@@ -1456,6 +1603,7 @@ function buildGalleryHTML(folderName, entries, modelsByNodeId, rootDesc, rootBg)
 + dataJson + '\n'
 + '<' + '/script>\n'
 + '\n'
++ hdriBundle + '\n'
 + '<script type="importmap">\n'
 + '{\n'
 + '  "imports": {\n'
@@ -1537,7 +1685,7 @@ async function exportFolderAsGalleryHTML(folderId, DB, bgSettings) {
           if (d) sounds[sid] = d;
         }
       }
-      modelsByNodeId[nid] = { name: node.name, data: dataUrl, bg: mBg, interactions: interactions, sounds: sounds, defaultView: node.defaultView || null, lockRotation: !!node.lockRotation, chains: DB.getChains(nid) || [] };
+      modelsByNodeId[nid] = { name: node.name, data: dataUrl, bg: mBg, interactions: interactions, sounds: sounds, defaultView: node.defaultView || null, lockRotation: !!node.lockRotation, chains: DB.getChains(nid) || [], envMap: node.envMap, envExposure: node.envExposure };
     }
   }
 
@@ -1548,7 +1696,7 @@ async function exportFolderAsGalleryHTML(folderId, DB, bgSettings) {
     var singleEntry = modelsByNodeId[singleId];
     if (!singleEntry) throw new Error('该模型数据丢失');
     var singleBg = DB.resolveBgSettings(singleId);
-    var html = buildStandaloneHTML(singleNode.name, singleEntry.data, singleBg, singleEntry.interactions, singleEntry.sounds, singleNode.defaultView, false, collectExitMeshes(singleEntry.interactions), '', singleEntry.lockRotation, singleEntry.chains);
+    var html = buildStandaloneHTML(singleNode.name, singleEntry.data, singleBg, singleEntry.interactions, singleEntry.sounds, singleNode.defaultView, false, collectExitMeshes(singleEntry.interactions), '', singleEntry.lockRotation, singleEntry.chains, singleNode.envMap, singleNode.envExposure);
     var safeName = (singleNode.name || 'model').replace(/[\\/:*?"<>|]/g, '_');
     var filename = safeName.replace(/\.glb$/i, '') + '.html';
     downloadText(html, filename, 'text/html;charset=utf-8');

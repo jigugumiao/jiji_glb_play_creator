@@ -13,6 +13,22 @@ const PRESET_ANIMS = {
   'nod':   { label: '（内置）点头',       dur: 0.60, amp: () => 0.28,         apply: (o, t, b, a) => { o.rotation.x = b.rx + a * Math.sin(Math.PI * t); } },
 };
 
+// ============ HDRI 环境贴图注册表（逐物体照明用，编辑器与导出共用） ============
+// 路径相对 index.html；type 决定用哪个 Loader（exr→EXRLoader，hdr→RGBELoader）。
+// 注：第 5 项「荒地」你尚未提供贴图文件，暂时缺省，后续补文件即可加回。
+window.HDRI_OPTIONS = [
+  { key: 'urban',  label: '都市夜景', en: 'Urban Night',  file: 'assets/hdri/shanghai_bund_1k.exr', type: 'exr' },
+  { key: 'indoor', label: '室内普通', en: 'Indoor',       file: 'assets/hdri/witsand_woolshop_1k.hdr', type: 'hdr' },
+  { key: 'blue',   label: '蓝色室内', en: 'Blue Interior', file: 'assets/hdri/ushaka_sea_world_aquarium_1k.hdr', type: 'hdr' },
+  { key: 'purple', label: '紫色室内', en: 'Purple Lobby',  file: 'assets/hdri/newman_lobby_1k.hdr', type: 'hdr' },
+  /* 5 荒地：缺少贴图文件，暂未加入 */
+  { key: 'snow',   label: '雪地',     en: 'Snowfield',     file: 'assets/hdri/snowy_forest_path_01_1k.hdr', type: 'hdr' },
+  { key: 'grotto', label: '山涧',     en: 'Grotto',        file: 'assets/hdri/blue_grotto_1k.hdr', type: 'hdr' },
+  { key: 'forest', label: '森林',     en: 'Forest',        file: 'assets/hdri/shady_patch_1k.hdr', type: 'hdr' },
+];
+window.HDRI_MAP = Object.fromEntries(window.HDRI_OPTIONS.map(o => [o.key, o]));
+window.HDRI_DEFAULT = 'urban';
+
 class GLBViewer {
   constructor(container) {
     this.container = container;
@@ -80,36 +96,83 @@ class GLBViewer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
+
+    // HDRI 环境贴图烘焙器：把等距柱状 HDRI 预过滤成供 PBR 使用的环境贴图
+    this.pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.pmrem.compileEquirectangularShader();
+    this._hdriCache = new Map();   // key -> Promise<THREE.Texture>(PMREM 结果)
   }
 
   _initLights() {
-    // 主光（投射阴影）
-    this.keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    this.keyLight.position.set(5, 8, 6);
-    this.keyLight.castShadow = true;
-    this.keyLight.shadow.mapSize.set(1024, 1024);
-    this.keyLight.shadow.camera.near = 0.01;
-    this.keyLight.shadow.camera.far = 200;
-    this.keyLight.shadow.camera.left = -20;
-    this.keyLight.shadow.camera.right = 20;
-    this.keyLight.shadow.camera.top = 20;
-    this.keyLight.shadow.camera.bottom = -20;
-    this.keyLight.shadow.bias = -0.0005;
-    this.scene.add(this.keyLight);
-    this.scene.add(this.keyLight.target);  // 目标默认在原点，随模型加载更新
+    // 主照明改为 HDRI 环境贴图（scene.environment，由 applyEnvironment 设置），
+    // 这里只保留一盏极弱方向光，专用于产生地面接触阴影（保持「落地」质感），不再叠加额外造型光。
+    this.shadowLight = new THREE.DirectionalLight(0xffffff, 0.2);
+    this.shadowLight.position.set(5, 8, 6);
+    this.shadowLight.castShadow = true;
+    this.shadowLight.shadow.mapSize.set(1024, 1024);
+    this.shadowLight.shadow.camera.near = 0.01;
+    this.shadowLight.shadow.camera.far = 200;
+    this.shadowLight.shadow.camera.left = -20;
+    this.shadowLight.shadow.camera.right = 20;
+    this.shadowLight.shadow.camera.top = 20;
+    this.shadowLight.shadow.camera.bottom = -20;
+    this.shadowLight.shadow.bias = -0.0005;
+    this.scene.add(this.shadowLight);
+    this.scene.add(this.shadowLight.target);  // 目标默认在原点，随模型加载更新
 
-    // 补光
-    this.fillLight = new THREE.DirectionalLight(0x88aaff, 0.5);
-    this.fillLight.position.set(-6, 3, -4);
-    this.scene.add(this.fillLight);
+    // 默认环境留空，等模型加载后由 applyEnvironment 注入 HDRI
+    this.scene.environment = null;
+  }
 
-    // 环境光
-    this.ambLight = new THREE.AmbientLight(0xffffff, 0.4);
-    this.scene.add(this.ambLight);
+  // 加载并缓存某 HDRI 的 PMREM 环境贴图（结果按 key 缓存，切换模型不重复加载）
+  loadHDRI(key) {
+    if (!key || !window.HDRI_MAP[key]) return Promise.resolve(null);
+    if (this._hdriCache.has(key)) return this._hdriCache.get(key);
+    const opt = window.HDRI_MAP[key];
+    // 优先用内联 base64 数据（assets/hdri/<key>.js 启动时已注入 window.HDRI_DATA），
+    // 这样 file:// 双击离线也能加载；本地 .exr/.hdr 文件作为兜底（需经本地服务器）。
+    const uri = (window.HDRI_DATA && window.HDRI_DATA[key]) || opt.file;
+    const loader = opt.type === 'exr' ? new THREE.EXRLoader() : new THREE.RGBELoader();
+    const p = new Promise((resolve, reject) => {
+      loader.load(
+        uri,
+        (tex) => {
+          tex.mapping = THREE.EquirectangularReflectionMapping;
+          const rt = this.pmrem.fromEquirectangular(tex);
+          tex.dispose();                 // 原始等距贴图已烘焙，释放
+          resolve(rt.texture);
+        },
+        undefined,
+        (err) => { this._hdriCache.delete(key); reject(err); }
+      );
+    });
+    this._hdriCache.set(key, p);
+    return p;
+  }
 
-    // 半球光
-    this.hemiLight = new THREE.HemisphereLight(0xffffff, 0x223344, 0.5);
-    this.scene.add(this.hemiLight);
+  // 应用某节点的环境设置：HDRI 照明 + 曝光；同时写入当前模型每个材质的 envMap（逐物体环境）
+  // node: { envMap?: string(HDRI key), envExposure?: number }
+  applyEnvironment(node) {
+    const key = (node && node.envMap) || window.HDRI_DEFAULT;
+    const exposure = (node && typeof node.envExposure === 'number') ? node.envExposure : 1.0;
+    this.renderer.toneMappingExposure = exposure;
+    return this.loadHDRI(key).then((envTex) => {
+      if (!envTex) return;
+      this.scene.environment = envTex;
+      if (this.currentModel) {
+        this.currentModel.traverse((o) => {
+          if (o.isMesh && o.material) {
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach((m) => { m.envMap = envTex; m.needsUpdate = true; });
+          }
+        });
+      }
+    });
+  }
+
+  // 仅更新曝光（滑块实时拖动用，避免重复加载 HDRI）
+  setExposure(val) {
+    this.renderer.toneMappingExposure = (typeof val === 'number') ? val : 1.0;
   }
 
   _initControls() {
@@ -249,6 +312,12 @@ class GLBViewer {
     this.renderer.dispose();
     this.renderer.domElement.remove();
     if (this.currentBlobUrl) URL.revokeObjectURL(this.currentBlobUrl);
+    // 释放缓存的 HDRI 环境贴图
+    if (this._hdriCache) {
+      this._hdriCache.forEach((p) => p.then?.((t) => t && t.dispose?.()).catch(() => {}));
+      this._hdriCache.clear();
+    }
+    this.pmrem?.dispose();
   }
 
   // 清除当前模型
@@ -404,10 +473,10 @@ class GLBViewer {
           this.grid.position.y = minY;
           this.shadowGround.position.y = minY;
           // 主光与阴影相机按模型尺度自适应，保证任意大小模型都有清晰阴影
-          this.keyLight.position.set(maxDim * 1.5, maxDim * 2.2, maxDim * 1.8);
-          this.keyLight.target.position.set(0, 0, 0);
-          this.keyLight.target.updateMatrixWorld();
-          const sc = this.keyLight.shadow.camera;
+          this.shadowLight.position.set(maxDim * 1.5, maxDim * 2.2, maxDim * 1.8);
+          this.shadowLight.target.position.set(0, 0, 0);
+          this.shadowLight.target.updateMatrixWorld();
+          const sc = this.shadowLight.shadow.camera;
           sc.left = -maxDim * 2; sc.right = maxDim * 2;
           sc.top = maxDim * 2; sc.bottom = -maxDim * 2;
           sc.near = 0.01; sc.far = maxDim * 10;
