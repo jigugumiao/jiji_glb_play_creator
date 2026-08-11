@@ -36,6 +36,9 @@ const ENV_MAP = __ENV_MAP__;
 const ENV_EXPOSURE = __ENV_EXPOSURE__;
 const ENV_ROTATION = __ENV_ROTATION__; // 环境贴图旋转（弧度）
 
+// 场视角（垂直 FOV，度）：与编辑器「全局信息」里的镜头参数保持一致，导出 / 剧情编辑器统一使用
+const FOV = __FOV__;
+
 // 剧情联动：内嵌模式（被剧情编辑器 iframe 召唤时为真）
 // EMBED=true 时，点中 EXIT_MESHES 中任一部位会向父页面 postMessage 通知「结束场景」
 const EMBED = __EMBED__;
@@ -47,7 +50,7 @@ const scene = new THREE.Scene();
 scene.background = __SCENE_BG__;
 
 const container = document.getElementById('viewer');
-const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.01, 5000);
+const camera = new THREE.PerspectiveCamera(FOV, container.clientWidth / container.clientHeight, 0.01, 5000);
 camera.position.set(3, 2, 5);
 
 // ============ 像素滤镜 ============
@@ -625,11 +628,13 @@ function collectExitMeshes(interactions) {
 // 模板：把 viewer 源码和模型元数据塞进去
 // embed/exitMeshes/modelId 用于剧情联动：embed=true 时该 HTML 被剧情编辑器 iframe 召唤，
 // 点中 exitMeshes 中任一部位会向父页面 postMessage({type:'glb-scene-exit', id, mesh}) 通知结束场景
-function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions, sounds, defaultView, embed, exitMeshes, modelId, lockRotation, chains, envMap, envExposure, envRotation) {
+function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions, sounds, defaultView, embed, exitMeshes, modelId, lockRotation, chains, envMap, envExposure, envRotation, fov) {
   // 该模型使用的 HDRI 环境贴图 key（默认 urban 都市夜景）
   var envKey = envMap || (window.HDRI_DEFAULT) || 'urban';
   var envExp = (typeof envExposure === 'number') ? envExposure : 1.0;
   var envRot = (typeof envRotation === 'number') ? envRotation : 0;
+  // 场视角：与编辑器「全局信息」镜头参数一致；超出 10~120 范围时回落到 50
+  var fovVal = (typeof fov === 'number' && isFinite(fov)) ? Math.max(10, Math.min(120, fov)) : 50;
   var _opt = (window.HDRI_MAP && window.HDRI_MAP[envKey]) || { key: envKey, type: 'hdr' };
   var _data = (window.HDRI_DATA && window.HDRI_DATA[envKey]) || '';
   // 仅内联该模型用到的那一张 HDRI（base64 数据 URI），保持导出文件自包含、离线可用
@@ -682,7 +687,8 @@ function buildStandaloneHTML(modelName, base64DataUrl, bgSettings, interactions,
     .replace('__MODEL_ID__', JSON.stringify(modelId || ''))
     .replace('__ENV_MAP__', '`' + envKey + '`')
     .replace('__ENV_EXPOSURE__', String(envExp))
-    .replace('__ENV_ROTATION__', String(envRot));
+    .replace('__ENV_ROTATION__', String(envRot))
+    .replace('__FOV__', String(fovVal));
 
   return `<!DOCTYPE html>
 <html lang="${window.getLang() === 'en' ? 'en' : 'zh-CN'}">
@@ -781,7 +787,7 @@ async function exportModelAsStandaloneHTML(modelId, DB, bgSettings) {
       if (d) sounds[sid] = d;
     }
   }
-  const html = buildStandaloneHTML(node.name, dataUrl, bgSettings, interactions, sounds, node.defaultView || null, false, collectExitMeshes(interactions), '', !!node.lockRotation, chains, node.envMap, node.envExposure, node.envRotation);
+  const html = buildStandaloneHTML(node.name, dataUrl, bgSettings, interactions, sounds, node.defaultView || null, false, collectExitMeshes(interactions), '', !!node.lockRotation, chains, node.envMap, node.envExposure, node.envRotation, (DB.getCameraSettings && DB.getCameraSettings().fov) || 50);
   const safeName = (node.name || 'model').replace(/[\\/:*?"<>|]/g, '_');
   const filename = safeName.replace(/\.glb$/i, '') + '.html';
   downloadText(html, filename, 'text/html;charset=utf-8');
@@ -1737,7 +1743,7 @@ async function exportFolderAsGalleryHTML(folderId, DB, bgSettings) {
     var singleEntry = modelsByNodeId[singleId];
     if (!singleEntry) throw new Error('该模型数据丢失');
     var singleBg = DB.resolveBgSettings(singleId);
-    var html = buildStandaloneHTML(singleNode.name, singleEntry.data, singleBg, singleEntry.interactions, singleEntry.sounds, singleNode.defaultView, false, collectExitMeshes(singleEntry.interactions), '', singleEntry.lockRotation, singleEntry.chains, singleNode.envMap, singleNode.envExposure, singleNode.envRotation);
+    var html = buildStandaloneHTML(singleNode.name, singleEntry.data, singleBg, singleEntry.interactions, singleEntry.sounds, singleNode.defaultView, false, collectExitMeshes(singleEntry.interactions), '', singleEntry.lockRotation, singleEntry.chains, singleNode.envMap, singleNode.envExposure, singleNode.envRotation, (DB.getCameraSettings && DB.getCameraSettings().fov) || 50);
     var safeName = (singleNode.name || 'model').replace(/[\\/:*?"<>|]/g, '_');
     var filename = safeName.replace(/\.glb$/i, '') + '.html';
     downloadText(html, filename, 'text/html;charset=utf-8');
