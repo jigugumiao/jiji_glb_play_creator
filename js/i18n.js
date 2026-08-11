@@ -32,6 +32,7 @@
 
       // 侧边栏
       '资源': 'Assets',
+      '场景列表': 'Scene List',
       '过滤模型 / 文件夹…': 'Filter models / folders…',
       '新建文件夹': 'New Folder',
       '上传 GLB': 'Upload GLB',
@@ -83,12 +84,12 @@
       '游戏中旋转设置': 'In-Game Rotation Settings',
       '关闭手动旋转': 'Disable Manual Rotation',
       '勾选后，导出的成品（独立查看器 / 剧情编辑器中的 3D 界面）将禁止手动旋转，固定在默认视角上。': 'When enabled, the exported viewer (standalone / 3D in Story Editor) locks manual rotation, fixing it to the default view.',
-      '该模型没有可识别的部位网格。': 'This model has no recognizable part meshes.',
+      '该模型没有可识别的物体网格。': 'This model has no recognizable object meshes.',
 
       // 交互配置
       '内置简易动画': 'Built-in Simple Animations',
-      '触发部位': 'Trigger Part',
-      '点击该部位时触发以下效果': 'Trigger the following effects when this part is clicked',
+      '物体': 'Object',
+      '点击该物体时触发以下效果': 'Trigger the following effects when this object is clicked',
       '触发后播放': 'Play After Trigger',
       '动画': 'Animation',
       '音效': 'Sound',
@@ -101,17 +102,17 @@
       '动画来回播放': 'Ping-pong Animation',
       '动画自动返回': 'Auto-Return Animation',
       '触发后效果': 'Effect After Trigger',
-      '动画结束后删除该触发部位': 'Remove this part after animation ends',
-      '点击该触发部位结束 3D 界面、继续剧情': 'Click this part to end the 3D scene and continue the story',
+      '动画结束后删除该物体': 'Remove this object after animation ends',
+      '点击该物体结束 3D 界面、继续剧情': 'Click this object to end the 3D scene and continue the story',
       '动画增效：无 / 动画来回播放（点一下正向，再点一下倒放回开头）/ 动画自动返回（点一下自动完整来回一次，正向播完自动倒放回开头）': 'Enhancement: None / Ping-pong (click forward, click again to reverse) / Auto-Return (click plays a full round trip)',
-      '动画结束后删除该触发部位：动画（来回）播放完毕后，该部位从场景中消失，不可再点击': 'Remove this part after animation: once (ping-pong) playback finishes, the part vanishes from the scene and can no longer be clicked',
-      '在联动剧情工具里召唤该 3D 界面后，点击此部位即结束 3D 界面、继续剧情（可设置多个结束部位）': 'Once this 3D scene is summoned by the linked Story tool, clicking this part ends the scene and continues the story (multiple end parts allowed)',
+      '动画结束后删除该物体：动画（来回）播放完毕后，该物体从场景中消失，不可再点击': 'Remove this object after animation: once (ping-pong) playback finishes, the object vanishes from the scene and can no longer be clicked',
+      '在联动剧情工具里召唤该 3D 界面后，点击此物体即结束 3D 界面、继续剧情（可设置多个结束物体）': 'Once this 3D scene is summoned by the linked Story tool, clicking this object ends the scene and continues the story (multiple end objects allowed)',
       '交互链与触发限制': 'Chain & Trigger Limits',
       '所属交互链': 'Belongs to Chain',
       '— 不属于任何链（可任意触发）—': '— Belongs to no chain (free trigger) —',
       '允许多次点击': 'Allow Multiple Clicks',
       '默认每个部位只响应一次点击（防止解谜动画被反向播放，如盒子打开后别关上）。勾选后允许重复点击。': 'By default each part responds once (prevents puzzle animation from reversing). Check to allow repeats.',
-      '取消勾选后，点击该部位不会有任何反应（不放大、不播放动画、不播放音效）': 'Uncheck to make clicking this part do nothing (no zoom, animation, or sound)',
+      '取消勾选后，点击该物体不会有任何反应（不放大、不播放动画、不播放音效）': 'Uncheck to make clicking this object do nothing (no zoom, animation, or sound)',
 
       // 文件夹信息
       '未选择文件夹': 'No folder selected',

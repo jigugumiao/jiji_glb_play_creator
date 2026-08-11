@@ -612,12 +612,26 @@ input, button, textarea, select { color: var(--txt); }
 /* ============ 点击交互配置 ============ */
 .interact-block {
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 11px;
+  border-radius: 12px;
+  padding: 12px;
   margin-bottom: 11px;
   background: var(--surface-2);
-  transition: border-color .15s, background .15s;
+  transition: border-color .15s, background .15s, box-shadow .15s;
 }
+.interact-block:hover { border-color: rgba(124,140,255,0.4); }
+.interact-block.respond-off { opacity: 0.78; }
+/* 折叠态摘要：收起时一眼看到该物体配了什么（动画 / 音效） */
+.interact-summary {
+  font-size: 12px;
+  color: var(--txt-2);
+  margin: 7px 0 2px;
+  padding: 7px 10px;
+  background: var(--surface-1);
+  border-radius: 8px;
+  word-break: break-all;
+}
+.interact-summary b { color: var(--txt); font-weight: 600; }
+.interact-block:not(.collapsed) .interact-summary { display: none; }
 .interact-block.active {
   background: var(--accent-2-soft);
   border-color: rgba(124,140,255,0.45);

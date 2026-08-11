@@ -452,7 +452,7 @@ async function renderModelInfo() {
         ${t('点击交互配置')}
       </h4>
       <div class="collapse-body" id="interact-body" ${interactExpanded ? '' : 'hidden'}>
-        <div class="hint" style="font-size:11px;margin-bottom:8px;color:#8b93a3">点击模型上的部位，触发此处绑定的动画与音效（音效每次点击都会播放）。下面每个选项含义：<br>· <b>点击时响应</b>：取消后点击该物体无任何反应；<br>· <b>来回播放</b>：点一下正向播放，再点一下倒放回开头（需要两次点击）；<br>· <b>动画自动归位</b>：点一下即自动完整来回一次（正向播完自动倒放回开头，连续无需再次点击）；<br>· <b>动画结束后删除该物体</b>：动画（来回）播放完毕后，该物体从场景中消失，不可再点击；<br>· <b>设为结束物体</b>：在联动剧情工具里召唤该 3D 界面后，点击此物体即结束 3D 界面、继续剧情（可设置多个）。<br>音效在左侧「音效库」标签里导入与管理。</div>
+        <div class="hint" style="font-size:11px;margin-bottom:8px;color:#8b93a3">点击模型上的物体，触发此处绑定的动画与音效（音效每次点击都会播放）。下面每个选项含义：<br>· <b>点击时响应</b>：取消后点击该物体无任何反应；<br>· <b>来回播放</b>：点一下正向播放，再点一下倒放回开头（需要两次点击）；<br>· <b>动画自动归位</b>：点一下即自动完整来回一次（正向播完自动倒放回开头，连续无需再次点击）；<br>· <b>动画结束后删除该物体</b>：动画（来回）播放完毕后，该物体从场景中消失，不可再点击；<br>· <b>设为结束物体</b>：在联动剧情工具里召唤该 3D 界面后，点击此物体即结束 3D 界面、继续剧情（可设置多个）。<br>音效在左侧「音效库」标签里导入与管理。</div>
         <div id="interact-list"></div>
       </div>
     </div>`;
@@ -614,7 +614,7 @@ async function renderModelInfo() {
       }
     }
     if (meshes.length === 0) {
-      listEl.innerHTML = '<div class="hint" style="font-size:11px;color:#8b93a3">' + t('该模型没有可识别的部位网格。') + '</div>';
+      listEl.innerHTML = '<div class="hint" style="font-size:11px;color:#8b93a3">' + t('该模型没有可识别的物体网格。') + '</div>';
     } else {
       listEl.innerHTML = meshes.map(m => {
         const e = norm[m.name] || { clip: '', sound: '', respond: true, pingpong: false, autoReturn: false, deleteAfter: false, exit: false, clipIn: 0, clipOut: null, once: true };
@@ -636,16 +636,21 @@ async function renderModelInfo() {
           .concat(getModelChains().map(ch => `<option value="${escapeHtml(ch.id)}" ${ch.id === curChain ? 'selected' : ''}>${escapeHtml(ch.name)}</option>`))
           .join('');
         const multiChk = (e.once === false) ? 'checked' : '';
+        // 折叠态摘要：收起时一眼看到该物体配了什么（动画 / 音效）
+        const clipSummary = e.clip || '—';
+        const snd = sounds.find(s => s.id === e.sound);
+        const soundSummary = snd ? snd.name : '—';
         return `
-        <div class="interact-block collapsed${respondChk ? '' : ' respond-off'}" data-mesh="${escapeHtml(m.name)}">
+        <div class="interact-block ${respondChk ? '' : 'collapsed respond-off'}" data-mesh="${escapeHtml(m.name)}">
           <div class="interact-trigger-head">
             <span class="interact-collapse-caret">▸</span>
-            <span class="interact-trigger-label">${t('触发部位')}</span>
+            <span class="interact-trigger-label">${t('物体')}</span>
             <span class="interact-mesh" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
           </div>
-          <label class="interact-flag interact-master" title="${t('取消勾选后，点击该部位不会有任何反应（不放大、不播放动画、不播放音效）')}">
-            <input type="checkbox" class="interact-respond" data-mesh="${escapeHtml(m.name)}" ${respondChk}><span>${t('点击该部位时触发以下效果')}</span>
+          <label class="interact-flag interact-master" title="${t('取消勾选后，点击该物体不会有任何反应（不放大、不播放动画、不播放音效）')}">
+            <input type="checkbox" class="interact-respond" data-mesh="${escapeHtml(m.name)}" ${respondChk}><span>${t('点击该物体时触发以下效果')}</span>
           </label>
+          <div class="interact-summary">${t('动画')}：<b>${escapeHtml(clipSummary)}</b> · ${t('音效')}：<b>${escapeHtml(soundSummary)}</b></div>
           <div class="interact-section">
             <div class="interact-section-title">${t('触发后播放')}</div>
             <div class="interact-row">
@@ -671,11 +676,11 @@ async function renderModelInfo() {
           </div>
           <div class="interact-section kind-exit">
             <div class="interact-section-title">${t('触发后效果')}</div>
-            <label class="interact-flag" title="${t('动画结束后删除该触发部位：动画（来回）播放完毕后，该部位从场景中消失，不可再点击')}">
-              <input type="checkbox" class="interact-deleteafter" data-mesh="${escapeHtml(m.name)}" ${delChk}><span>${t('动画结束后删除该触发部位')}</span>
+            <label class="interact-flag" title="${t('动画结束后删除该物体：动画（来回）播放完毕后，该物体从场景中消失，不可再点击')}">
+              <input type="checkbox" class="interact-deleteafter" data-mesh="${escapeHtml(m.name)}" ${delChk}><span>${t('动画结束后删除该物体')}</span>
             </label>
-            <label class="interact-flag" title="${t('在联动剧情工具里召唤该 3D 界面后，点击此部位即结束 3D 界面、继续剧情（可设置多个结束部位）')}">
-              <input type="checkbox" class="interact-exit" data-mesh="${escapeHtml(m.name)}" ${exitChk}><span class="exit-label">${t('点击该触发部位结束 3D 界面、继续剧情')}</span>
+            <label class="interact-flag" title="${t('在联动剧情工具里召唤该 3D 界面后，点击此物体即结束 3D 界面、继续剧情（可设置多个结束物体）')}">
+              <input type="checkbox" class="interact-exit" data-mesh="${escapeHtml(m.name)}" ${exitChk}><span class="exit-label">${t('点击该物体结束 3D 界面、继续剧情')}</span>
             </label>
           </div>
           <div class="interact-section kind-chain">
@@ -728,16 +733,19 @@ async function renderModelInfo() {
       listEl.querySelectorAll('.interact-chain').forEach(sel => {
         sel.addEventListener('change', () => assignMeshToChain(sel.dataset.mesh, sel.value || null));
       });
-      // 主开关「点击该部位时触发以下效果」：关闭时把下方「触发后播放 / 触发后效果」分组变暗，提示这些效果当前不触发
+      // 主开关「点击该物体时触发以下效果」：打开时自动展开该物体配置、关闭时自动收起（并变暗下方效果分组）；勾选即更新
       listEl.querySelectorAll('.interact-respond').forEach(sel => {
         sel.addEventListener('change', () => {
           const block = sel.closest('.interact-block');
-          if (block) block.classList.toggle('respond-off', !sel.checked);
+          if (block) {
+            block.classList.toggle('respond-off', !sel.checked);
+            block.classList.toggle('collapsed', !sel.checked);
+          }
           saveInteraction();
         });
       });
-      // 触发器头部点击：折叠 / 展开 该部位配置（默认折叠，降低信息密度）
-      // 折叠 / 展开该部位配置（默认折叠，降低信息密度）；点击头部同时在 3D 视口里高亮该部位
+      // 触发器头部点击：折叠 / 展开 该物体配置（默认折叠，降低信息密度）
+      // 折叠 / 展开该物体配置（默认折叠，降低信息密度）；点击头部同时在 3D 视口里高亮该物体
       listEl.querySelectorAll('.interact-trigger-head').forEach(h => {
         h.addEventListener('click', () => {
           const block = h.closest('.interact-block');
@@ -963,10 +971,10 @@ function highlightMeshInList(meshName) {
 
 // ============ 时间轴（嵌入 GLB 片段查看器，作用域 A） ============
 // 时间轴与「当前正在编辑的 mesh 交互」绑定：拖动起止 = 写进该 mesh 交互的 clipIn/clipOut；
-// 在 3D 界面里点击该部位即播放指定段落。时间轴本身只做预览（手动推进 action.time）。
+// 在 3D 界面里点击该物体即播放指定段落。时间轴本身只做预览（手动推进 action.time）。
 
 // ============ 交互链（解谜顺序） ============
-// 交互链 = 交互物品的前后顺序；同一条链上，只有「前一个部位被点击过」，后一个部位才允许触发。
+// 交互链 = 交互物体的前后顺序；同一条链上，只有「前一个物体被点击过」，后一个物体才允许触发。
 // 未加入任何链的部位可任意触发。导出成品（独立查看器 / 画廊 / 剧情编辑器）也按此门禁执行。
 
 // 读取当前模型的链
